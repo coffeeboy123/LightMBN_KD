@@ -17,6 +17,14 @@ try:
 except Exception:
     print('Neptune is not installed.')
 
+import re
+
+def sanitize_filename(s):
+    s = s.replace("*", "x")
+    s = s.replace("+", "_")
+    s = re.sub(r'[^a-zA-Z0-9_\.]', '', s)
+    return s
+
 
 class checkpoint():
     def __init__(self, args):
@@ -55,11 +63,15 @@ class checkpoint():
             self.fold = last_folder.split('_')[-1].upper()
         else:
             self.fold = 'A'
-        self.log_filename = f"{args.model_student}_{args.data_train}_{self.fold}_log.txt"
-        self.map_log_filename = f"{args.model_student}_{args.data_train}_{self.fold}_map_log.pt"
-        self.config_filename = f"{args.model_student}_{args.data_train}_{self.fold}_config.yaml"
-        self.model_latest_filename = f"{args.model_student}_{args.data_train}_{self.fold}_model-latest.pth"
-        self.model_best_filename = f"{args.model_student}_{args.data_train}_{self.fold}_model-best.pth"
+        
+
+        loss_tag = sanitize_filename(args.loss)
+        self.log_filename = f"{args.model_student}_{args.data_train}_{self.fold}_{loss_tag}_log.txt"
+        self.map_log_filename = f"{args.model_student}_{args.data_train}_{self.fold}_{loss_tag}_map_log.pt"
+        self.config_filename = f"{args.model_student}_{args.data_train}_{self.fold}_{loss_tag}_config.yaml"
+        self.model_latest_filename = f"{args.model_student}_{args.data_train}_{self.fold}_{loss_tag}_model-latest.pth"
+        self.model_best_filename = f"{args.model_student}_{args.data_train}_{self.fold}_{loss_tag}_model-best.pth"
+
 
         map_log_path = os.path.join(self.dir, self.map_log_filename)
         if os.path.exists(map_log_path):
