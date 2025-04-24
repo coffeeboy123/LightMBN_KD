@@ -55,7 +55,7 @@ class checkpoint():
             self.fold = last_folder.split('_')[-1].upper()
         else:
             self.fold = 'A'
-        self.log_filename = f"{args.model}_{args.data_train}_{self.fold}_log.txt"
+        self.log_filename = f"{args.model_student}_{args.data_train}_{self.fold}_log.txt"
         self.map_log_filename = f"{args.model}_{args.data_train}_{self.fold}_map_log.pt"
         self.config_filename = f"{args.model}_{args.data_train}_{self.fold}_config.yaml"
         self.model_latest_filename = f"{args.model}_{args.data_train}_{self.fold}_model-latest.pth"
