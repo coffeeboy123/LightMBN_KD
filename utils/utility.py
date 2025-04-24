@@ -23,7 +23,6 @@ class checkpoint():
         self.args = args
         self.log = torch.Tensor()
         self.since = datetime.datetime.now()
-
         now = datetime.datetime.now().strftime('%Y-%m-%d-%H-%M-%S')
 
         def _make_dir(path):
@@ -35,9 +34,9 @@ class checkpoint():
         if args.load == '':
             if args.save == '':
                 args.save = now
-            self.dir = ROOT_PATH + '/experiment/' + args.save
+            self.dir = '/content/gdrive/MyDrive/LightMBN_Save' + '/experiment/' + args.save
         else:
-            self.dir = ROOT_PATH + '/experiment/' + args.load
+            self.dir = '/content/gdrive/MyDrive/LightMBN_Save' + '/experiment/' + args.save
             if not os.path.exists(self.dir):
                 args.load = ''
             args.save = args.load
@@ -56,14 +55,11 @@ class checkpoint():
             self.fold = last_folder.split('_')[-1].upper()
         else:
             self.fold = 'A'
-        self.log_filename = f"{args.model_student}_{args.data_train}_{self.fold}_kd_log.txt"
-        self.map_log_filename = f"{args.model_student}_{args.data_train}_{self.fold}_kd_map_log.pt"
-        self.config_filename = f"{args.model_student}_{args.data_train}_{self.fold}_kd_config.yaml"
-        self.model_kd_student_latest_filename = f"{args.model_student}_{args.data_train}_{self.fold}_model_kd_student-latest.pth"
-        self.model_kd_student_best_filename = f"{args.model_student}_{args.data_train}_{self.fold}_model_kd_student-best.pth"
-        # __init__ 마지막 부분에
-        self.model_latest_filename = self.model_kd_student_latest_filename
-        self.model_best_filename = self.model_kd_student_best_filename
+        self.log_filename = f"{args.model}_{args.data_train}_{self.fold}_log.txt"
+        self.map_log_filename = f"{args.model}_{args.data_train}_{self.fold}_map_log.pt"
+        self.config_filename = f"{args.model}_{args.data_train}_{self.fold}_config.yaml"
+        self.model_latest_filename = f"{args.model}_{args.data_train}_{self.fold}_model-latest.pth"
+        self.model_best_filename = f"{args.model}_{args.data_train}_{self.fold}_model-best.pth"
 
         map_log_path = os.path.join(self.dir, self.map_log_filename)
         if os.path.exists(map_log_path):
@@ -130,7 +126,7 @@ class checkpoint():
         labels = ['mAP', 'rank1', 'rank3', 'rank5', 'rank10']
         fig = plt.figure()
 
-        title = f'{self.args.model_student} on {self.args.data_test} ({self.fold}-fold)'
+        title = f'{self.args.model} on {self.args.data_test} ({self.fold}-fold)'
         plt.title(title)
 
         for i in range(len(labels)):
@@ -141,7 +137,7 @@ class checkpoint():
         plt.ylabel('mAP/rank')
         plt.grid(True)
 
-        pdf_name = f'{self.args.model_student}_{self.args.data_test}_{self.fold}_result.pdf'
+        pdf_name = f'{self.args.model}_{self.args.data_test}_{self.fold}_result.pdf'
         plt.savefig(os.path.join(self.dir, pdf_name), dpi=600)
         plt.close(fig)
 
