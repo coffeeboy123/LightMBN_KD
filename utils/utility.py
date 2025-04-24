@@ -68,9 +68,9 @@ class checkpoint():
         loss_tag = sanitize_filename(args.loss)
         epoch_tag = f"{args.epochs}epoch"
 
-        self.log_filename = f"{args.model_student}_{args.data_train}_{self.fold}_{loss_tag}_log.txt"
-        self.map_log_filename = f"{args.model_student}_{args.data_train}_{self.fold}_{loss_tag}_map_log.pt"
-        self.config_filename = f"{args.model_student}_{args.data_train}_{self.fold}_{loss_tag}_config.yaml"
+        self.log_filename = f"{args.model_student}_{args.data_train}_{self.fold}_{loss_tag}_{epoch_tag}_log.txt"
+        self.map_log_filename = f"{args.model_student}_{args.data_train}_{self.fold}_{loss_tag}_{epoch_tag}_map_log.pt"
+        self.config_filename = f"{args.model_student}_{args.data_train}_{self.fold}_{loss_tag}_{epoch_tag}_config.yaml"
         self.model_latest_filename = f"{args.model_student}_{args.data_train}_{self.fold}_{loss_tag}_{epoch_tag}_model-latest.pth"
         self.model_best_filename = f"{args.model_student}_{args.data_train}_{self.fold}_{loss_tag}_{epoch_tag}_model-best.pth"
 
