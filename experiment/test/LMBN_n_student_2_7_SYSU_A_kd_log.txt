@@ -1,0 +1,76 @@
+[INFO] Building LMBN_n_student_2_7 model... Time used: 0 m 0 s
+[INFO] Building LMBN_n_teacher_6 model... Time used: 0 m 2 s
+[INFO] Making loss... Time used: 0 m 2 s
+[INFO] Successfully loaded pretrained weights from "D:/LightMBN-master-kd/LMBN_n_teacher_6_SYSU_A_model-best.pth" Time used: 0 m 3 s
+[INFO] Model parameters: 1749248 flops: 301959600 Time used: 0 m 4 s
+[INFO] GPU: NVIDIA GeForce GTX 1070 Time used: 0 m 4 s
+[INFO] Starting from epoch 1 Time used: 0 m 4 s
+[INFO] Epoch: 1	Learning rate: 6.00e-04   Time used: 0 m 4 s
+[INFO] [1/50]	655/655	[CrossEntropy: 14.429392][MSLoss: 0.830138][KDLoss: 0.084910][Total: 15.344448] Time used: 5 m 1 s
+
+[INFO] Test: Time used: 5 m 1 s
+[INFO] mAP: 0.4864 | rank1: 0.4414 | rank3: 0.5856 | rank5: 0.7027 | rank10: 0.8198 (Best rank1: 0.4414 @epoch 1) Time used: 5 m 59 s
+[INFO] Checkpoint saved to "D:\LightMBN-master-kd\LightMBN-master-kd/experiment/test\LMBN_n_student_2_7_SYSU_A_model_kd_student-latest.pth" Time used: 5 m 59 s
+[INFO] [2/50]	655/655	[CrossEntropy: 8.998796][MSLoss: 0.623616][KDLoss: 0.040874][Total: 9.663293] Time used: 10 m 48 s
+
+[INFO] Test: Time used: 10 m 48 s
+[INFO] mAP: 0.5399 | rank1: 0.4865 | rank3: 0.6216 | rank5: 0.7117 | rank10: 0.8108 (Best rank1: 0.4865 @epoch 2) Time used: 11 m 45 s
+[INFO] Checkpoint saved to "D:\LightMBN-master-kd\LightMBN-master-kd/experiment/test\LMBN_n_student_2_7_SYSU_A_model_kd_student-latest.pth" Time used: 11 m 45 s
+[INFO] [3/50]	655/655	[CrossEntropy: 5.794607][MSLoss: 0.545035][KDLoss: 0.029177][Total: 6.368822] Time used: 16 m 35 s
+
+[INFO] Test: Time used: 16 m 35 s
+[INFO] mAP: 0.5915 | rank1: 0.5405 | rank3: 0.6847 | rank5: 0.7748 | rank10: 0.8649 (Best rank1: 0.5405 @epoch 3) Time used: 17 m 31 s
+[INFO] Checkpoint saved to "D:\LightMBN-master-kd\LightMBN-master-kd/experiment/test\LMBN_n_student_2_7_SYSU_A_model_kd_student-latest.pth" Time used: 17 m 32 s
+[INFO] [4/50]	655/655	[CrossEntropy: 4.187127][MSLoss: 0.512985][KDLoss: 0.026108][Total: 4.726220] Time used: 22 m 21 s
+
+[INFO] Test: Time used: 22 m 21 s
+[INFO] mAP: 0.6143 | rank1: 0.5405 | rank3: 0.7297 | rank5: 0.8018 | rank10: 0.9009 (Best rank1: 0.5405 @epoch 4) Time used: 23 m 17 s
+[INFO] Checkpoint saved to "D:\LightMBN-master-kd\LightMBN-master-kd/experiment/test\LMBN_n_student_2_7_SYSU_A_model_kd_student-latest.pth" Time used: 23 m 18 s
+[INFO] [5/50]	655/655	[CrossEntropy: 3.227303][MSLoss: 0.491203][KDLoss: 0.024630][Total: 3.743136] Time used: 28 m 17 s
+
+[INFO] Test: Time used: 28 m 17 s
+[INFO] mAP: 0.6394 | rank1: 0.6036 | rank3: 0.6937 | rank5: 0.7928 | rank10: 0.8739 (Best rank1: 0.6036 @epoch 5) Time used: 29 m 41 s
+[INFO] Checkpoint saved to "D:\LightMBN-master-kd\LightMBN-master-kd/experiment/test\LMBN_n_student_2_7_SYSU_A_model_kd_student-latest.pth" Time used: 29 m 42 s
+[INFO] [6/50]	655/655	[CrossEntropy: 2.529086][MSLoss: 0.470127][KDLoss: 0.023740][Total: 3.022951] Time used: 34 m 49 s
+
+[INFO] Test: Time used: 34 m 49 s
+[INFO] mAP: 0.6193 | rank1: 0.5586 | rank3: 0.7387 | rank5: 0.8018 | rank10: 0.8649 (Best rank1: 0.6036 @epoch 5) Time used: 35 m 50 s
+[INFO] Building LMBN_n_student_2_7 model... Time used: 0 m 0 s
+[INFO] Building LMBN_n_teacher_6 model... Time used: 0 m 2 s
+[INFO] Making loss... Time used: 0 m 2 s
+[INFO] Successfully loaded pretrained weights from "D:/LightMBN-master-kd-logic/LMBN_n_teacher_6_SYSU_A_model-best.pth" Time used: 0 m 3 s
+[INFO] Model parameters: 1749248 flops: 301959600 Time used: 0 m 4 s
+[INFO] GPU: NVIDIA GeForce GTX 1070 Time used: 0 m 4 s
+[INFO] Starting from epoch 1 Time used: 0 m 4 s
+[INFO] Epoch: 1	Learning rate: 6.00e-04   Time used: 0 m 4 s
+[INFO] Building LMBN_n_student_2_7 model... Time used: 0 m 0 s
+[INFO] Building LMBN_n_teacher_6 model... Time used: 0 m 2 s
+[INFO] Building LMBN_n_student_2_7 model... Time used: 0 m 0 s
+[INFO] Building LMBN_n_teacher_6 model... Time used: 0 m 2 s
+[INFO] Making loss... Time used: 0 m 2 s
+[INFO] Successfully loaded pretrained weights from "D:/LightMBN-master-kd-logic/LMBN_n_teacher_6_SYSU_A_model-best.pth" Time used: 0 m 3 s
+[INFO] Model parameters: 1749248 flops: 301959600 Time used: 0 m 4 s
+[INFO] GPU: NVIDIA GeForce GTX 1070 Time used: 0 m 4 s
+[INFO] Starting from epoch 1 Time used: 0 m 4 s
+[INFO] Epoch: 1	Learning rate: 6.00e-04   Time used: 0 m 4 s
+[INFO] Building LMBN_n_student_2_7 model... Time used: 0 m 0 s
+[INFO] Building LMBN_n_teacher_6 model... Time used: 0 m 2 s
+[INFO] Making loss... Time used: 0 m 2 s
+[INFO] Successfully loaded pretrained weights from "D:/LightMBN-master-kd-logic/LMBN_n_teacher_6_SYSU_A_model-best.pth" Time used: 0 m 3 s
+[INFO] Model parameters: 1749248 flops: 301959600 Time used: 0 m 4 s
+[INFO] GPU: NVIDIA GeForce GTX 1070 Time used: 0 m 4 s
+[INFO] Starting from epoch 1 Time used: 0 m 4 s
+[INFO] Epoch: 1	Learning rate: 6.00e-04   Time used: 0 m 4 s
+[INFO] Building LMBN_n_student_2_7 model... Time used: 0 m 0 s
+[INFO] Building LMBN_n_teacher_6 model... Time used: 0 m 2 s
+[INFO] Making loss... Time used: 0 m 2 s
+[INFO] Successfully loaded pretrained weights from "D:/LightMBN-master-kd-logic/LMBN_n_teacher_6_SYSU_A_model-best.pth" Time used: 0 m 3 s
+[INFO] Model parameters: 1749248 flops: 301959600 Time used: 0 m 4 s
+[INFO] GPU: NVIDIA GeForce GTX 1070 Time used: 0 m 4 s
+[INFO] Starting from epoch 1 Time used: 0 m 4 s
+[INFO] Epoch: 1	Learning rate: 6.00e-04   Time used: 0 m 4 s
+[INFO] [1/50]	654/654	[CrossEntropy: 15.060381][MSLoss: 0.877529][KD_L1_Loss: 0.170473][KD_Logic_Loss: 11.946190][Total: 28.054567] Time used: 6 m 44 s
+
+[INFO] Test: Time used: 6 m 44 s
+[INFO] mAP: 0.4419 | rank1: 0.3964 | rank3: 0.5135 | rank5: 0.6306 | rank10: 0.7568 (Best rank1: 0.6036 @epoch 5) Time used: 7 m 49 s
+[INFO] Checkpoint saved to "D:\LightMBN-master-kd-logic\LightMBN-master-kd-logic/experiment/test\LMBN_n_student_2_7_SYSU_A_model_kd_student-latest.pth" Time used: 7 m 50 s
