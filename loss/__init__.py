@@ -49,6 +49,10 @@ class LossFunction:
                 # Dummy placeholder. 실제 계산은 Engine에서 F.mse_loss로 진행되므로 function은 None.
                 loss_function = None
 
+            elif loss_type == "KD_L2_Loss":
+                # Placeholder. 계산은 Engine에서 F.mse_loss로 처리
+                loss_function = None
+
             elif loss_type == "MSLoss":
                 loss_function = MultiSimilarityLoss(margin=args.margin)
             elif loss_type == "Focal":
@@ -143,6 +147,16 @@ class LossFunction:
                     raise ValueError("KD_Logic_Loss requires both logic_student and logic_teacher")
 
                 loss = l["function"](logic_student, logic_teacher)
+
+                effective_loss = l["weight"] * loss
+                losses.append(effective_loss)
+                self.log[-1, i] += effective_loss.item()
+            
+            elif l["type"] == "KD_L2_Loss":
+                if feature_student is None or feature_teacher is None:
+                    raise ValueError("KD_L2_Loss requires both feature_student and feature_teacher")
+
+                loss = F.mse_loss(feature_student, feature_teacher)
 
                 effective_loss = l["weight"] * loss
                 losses.append(effective_loss)
