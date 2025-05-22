@@ -61,10 +61,10 @@ class Engine:
             labels = labels.to(self.device)
 
             self.optimizer.zero_grad()
-            outputs_student, logic_student, feature_student = self.model_student(inputs)
-            logic_teacher, feature_teacher= self.model_teacher(inputs)
+            outputs_student, logic_student, feature_student, feature_map_student = self.model_student(inputs)
+            logic_teacher, feature_teacher, feature_map_teacher= self.model_teacher(inputs)
 
-            loss = self.loss.compute(outputs_student, labels, feature_student, feature_teacher, logic_student, logic_teacher)
+            loss = self.loss.compute(outputs_student, labels, feature_student, feature_teacher, logic_student, logic_teacher, feature_map_student, feature_map_teacher)
 
             loss.backward()
             self.optimizer.step()

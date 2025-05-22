@@ -49,10 +49,6 @@ class LossFunction:
                 # Dummy placeholder. 실제 계산은 Engine에서 F.mse_loss로 진행되므로 function은 None.
                 loss_function = None
 
-            elif loss_type == "KD_L2_Loss":
-                # Placeholder. 계산은 Engine에서 F.mse_loss로 처리
-                loss_function = None
-
             elif loss_type == "MSLoss":
                 loss_function = MultiSimilarityLoss(margin=args.margin)
             elif loss_type == "Focal":
@@ -66,16 +62,22 @@ class LossFunction:
             elif loss_type == "KD_Logic_Loss":
                 loss_function = KDLogicLoss(temperature=args.kd_temp)
 
+            elif loss_type == "KD_Feature_L2":
+                loss_function = None  # 직접 F.mse_loss로 계산하므로 함수는 필요 없음
+
             self.loss.append(
                 {"type": loss_type, "weight": float(weight), "function": loss_function}
             )
+
+
+
 
         if len(self.loss) > 1:
             self.loss.append({"type": "Total", "weight": 0, "function": None})
 
         self.log = torch.Tensor()
 
-    def compute(self, outputs, labels, feature_student=None, feature_teacher=None, logic_student=None, logic_teacher=None):
+    def compute(self, outputs, labels, feature_student=None, feature_teacher=None, logic_student=None, logic_teacher=None, feature_map_student=None, feature_map_teacher=None):
         losses = []
 
         for i, l in enumerate(self.loss):
@@ -151,16 +153,21 @@ class LossFunction:
                 effective_loss = l["weight"] * loss
                 losses.append(effective_loss)
                 self.log[-1, i] += effective_loss.item()
-            
-            elif l["type"] == "KD_L2_Loss":
-                if feature_student is None or feature_teacher is None:
-                    raise ValueError("KD_L2_Loss requires both feature_student and feature_teacher")
 
-                loss = F.mse_loss(feature_student, feature_teacher)
+            elif l["type"] == "KD_Feature_L2":
+                if feature_map_student is None or feature_map_teacher is None:
+                    raise ValueError("KD_Feature_L2 requires both feature_map_student and feature_map_teacher")
+
+                if isinstance(feature_map_student, list) and isinstance(feature_map_teacher, list):
+                    # 각 branch별 feature map 비교 (같은 길이 가정)
+                    loss = sum(F.mse_loss(f_s, f_t) for f_s, f_t in zip(feature_map_student, feature_map_teacher))
+                else:
+                    loss = F.mse_loss(feature_map_student, feature_map_teacher)
 
                 effective_loss = l["weight"] * loss
                 losses.append(effective_loss)
                 self.log[-1, i] += effective_loss.item()
+
 
 
 
