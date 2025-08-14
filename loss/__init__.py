@@ -30,6 +30,7 @@ class LossFunction:
         ce_value = None
         ms_value = None
         kl_value = None
+        l2_value = None
         for loss in args.loss.split("+"):
             weight, loss_type = loss.split("*")
             if loss_type == "CrossEntropy":
