@@ -144,10 +144,10 @@ class Engine:
         self.loss.end_log(len(self.train_loader))
 
         avg_loss = running_loss / len(self.train_loader)
-        avg_ce = ce_running_loss / len(self.train_loader) if ce_running_loss != 0 else None
-        avg_ms = ms_running_loss / len(self.train_loader) if ms_running_loss != 0 else None
-        avg_kl = kl_running_loss / len(self.train_loader) if kl_running_loss != 0 else None
-        avg_l2 = l2_running_loss / len(self.train_loader) if l2_running_loss != 0 else None
+        avg_ce = ce_running_loss / len(self.train_loader) 
+        avg_ms = ms_running_loss / len(self.train_loader) 
+        avg_kl = kl_running_loss / len(self.train_loader) 
+        avg_l2 = l2_running_loss / len(self.train_loader) 
 
         # checkpoint에 기록
         self.ckpt.loss_history.append(avg_loss)
@@ -223,10 +223,10 @@ class Engine:
                     wandb.log({"val_loss_step": total_loss.item()})
 
         avg_loss = running_loss / len(self.validation_loader)
-        avg_ce = ce_running_loss / len(self.validation_loader) if ce_running_loss != 0 else None
-        avg_ms = ms_running_loss / len(self.validation_loader) if ms_running_loss != 0 else None
-        avg_kl = kl_running_loss / len(self.validation_loader) if kl_running_loss != 0 else None
-        avg_l2 = l2_running_loss / len(self.validation_loader) if l2_running_loss != 0 else None
+        avg_ce = ce_running_loss / len(self.validation_loader) 
+        avg_ms = ms_running_loss / len(self.validation_loader) 
+        avg_kl = kl_running_loss / len(self.validation_loader) 
+        avg_l2 = l2_running_loss / len(self.validation_loader) 
 
         self.ckpt.validation_loss_history.append(avg_loss)
         self.val_ce_loss_history.append(avg_ce)
