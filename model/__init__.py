@@ -6,6 +6,21 @@ import os.path as osp
 from collections import OrderedDict
 
 
+def make_model(args, ckpt):
+
+    ckpt.write_log('[INFO] Building {} model...'.format(args.model))
+
+    device = torch.device('cpu' if args.cpu else 'cuda')
+    # nGPU = args.nGPU
+
+    module = import_module('model.' + args.model.lower())
+    model = getattr(module, args.model)(args).to(device)
+
+    if not args.cpu and args.nGPU > 1:
+        model = nn.DataParallel(model, range(args.nGPU))
+
+    return model
+
 def make_model_student(args, ckpt):
 
     ckpt.write_log('[INFO] Building {} model...'.format(args.model_student))

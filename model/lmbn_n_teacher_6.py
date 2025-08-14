@@ -6,6 +6,7 @@ from .attention import BatchDrop, BatchFeatureErase_Top, PAM_Module, CAM_Module,
 from .bnneck import BNNeck, BNNeck3
 from torch.nn import functional as F
 
+
 from torch.autograd import Variable
 
 
@@ -15,6 +16,7 @@ class LMBN_n_teacher_6(nn.Module):
 
         self.n_ch = 2
         self.chs = 512 // self.n_ch
+
 
         osnet = osnet_x1_0(pretrained=True)
 
@@ -70,10 +72,6 @@ class LMBN_n_teacher_6(nn.Module):
         par = self.partial_branch(x)
         cha = self.channel_branch(x)
 
-        glo_map = glo
-        par_map = par
-        cha_map = cha
-
         if self.activation_map:
             glo_ = glo
 
@@ -122,7 +120,7 @@ class LMBN_n_teacher_6(nn.Module):
 
         if not self.training:
 
-            return torch.stack([f_glo[1], f_glo_drop[1], f_p0[1], f_p1[1], f_p2[1], f_c0[1], f_c1[1]], dim=1), torch.stack([f_glo[-1], f_glo_drop[-1], f_p0[-1], f_p1[-1], f_p2[-1], f_c0[-1], f_c1[-1]], dim=2), torch.cat([glo_map, par_map, cha_map], dim=1)
+            return torch.stack([f_glo[0], f_glo_drop[0], f_p0[0], f_p1[0], f_p2[0], f_c0[0], f_c1[0]], dim=2)
             # return torch.stack([f_glo_drop[0], f_p0[0], f_p1[0], f_p2[0], f_c0[0], f_c1[0]], dim=2)
 
         return [f_glo[1], f_glo_drop[1], f_p0[1], f_p1[1], f_p2[1], f_c0[1], f_c1[1]], fea

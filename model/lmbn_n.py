@@ -22,23 +22,19 @@ class LMBN_n(nn.Module):
             osnet.conv1,
             osnet.maxpool,
             osnet.conv2,
-            osnet.maxpool,
             osnet.conv3[0]
         )
 
+        conv3 = osnet.conv3[1:]
 
+        self.global_branch = nn.Sequential(copy.deepcopy(
+            conv3), copy.deepcopy(osnet.conv4), copy.deepcopy(osnet.conv5))
 
-        self.global_branch = nn.Sequential(copy.deepcopy(osnet.conv1), copy.deepcopy(osnet.maxpool), copy.deepcopy(osnet.conv2),
-            copy.deepcopy(osnet.maxpool),copy.deepcopy(osnet.conv3), copy.deepcopy(osnet.maxpool),copy.deepcopy(osnet.conv4),
-                                           copy.deepcopy(osnet.maxpool),copy.deepcopy(osnet.conv5))
+        self.partial_branch = nn.Sequential(copy.deepcopy(
+            conv3), copy.deepcopy(osnet.conv4), copy.deepcopy(osnet.conv5))
 
-        self.partial_branch = nn.Sequential(copy.deepcopy(osnet.conv1), copy.deepcopy(osnet.maxpool), copy.deepcopy(osnet.conv2),
-            copy.deepcopy(osnet.maxpool),copy.deepcopy(osnet.conv3), copy.deepcopy(osnet.maxpool),copy.deepcopy(osnet.conv4),
-                                           copy.deepcopy(osnet.maxpool),copy.deepcopy(osnet.conv5))
-
-        self.channel_branch = nn.Sequential(copy.deepcopy(osnet.conv1), copy.deepcopy(osnet.maxpool), copy.deepcopy(osnet.conv2),
-            copy.deepcopy(osnet.maxpool),copy.deepcopy(osnet.conv3), copy.deepcopy(osnet.maxpool),copy.deepcopy(osnet.conv4),
-                                           copy.deepcopy(osnet.maxpool),copy.deepcopy(osnet.conv5))
+        self.channel_branch = nn.Sequential(copy.deepcopy(
+            conv3), copy.deepcopy(osnet.conv4), copy.deepcopy(osnet.conv5))
 
         self.global_pooling = nn.AdaptiveMaxPool2d((1, 1))
         self.partial_pooling = nn.AdaptiveAvgPool2d((2, 1))
@@ -76,7 +72,7 @@ class LMBN_n(nn.Module):
         # if self.batch_drop_block is not None:
         #     x = self.batch_drop_block(x)
 
-        #x = self.backone(x)
+        x = self.backone(x)
 
         glo = self.global_branch(x)
         par = self.partial_branch(x)
@@ -128,12 +124,8 @@ class LMBN_n(nn.Module):
 
         fea = [f_glo[-1], f_glo_drop[-1], f_p0[-1]]
 
-        if not self.training:
 
-            return torch.stack([f_glo[0], f_glo_drop[0], f_p0[0], f_p1[0], f_p2[0], f_c0[0], f_c1[0]], dim=2)
-            # return torch.stack([f_glo_drop[0], f_p0[0], f_p1[0], f_p2[0], f_c0[0], f_c1[0]], dim=2)
-
-        return [f_glo[1], f_glo_drop[1], f_p0[1], f_p1[1], f_p2[1], f_c0[1], f_c1[1]], fea
+        return [f_glo[1], f_glo_drop[1], f_p0[1], f_p1[1], f_p2[1], f_c0[1], f_c1[1]], fea, torch.stack([f_glo[0], f_glo_drop[0], f_p0[0], f_p1[0], f_p2[0], f_c0[0], f_c1[0]], dim=2)
 
     def weights_init_kaiming(self, m):
         classname = m.__class__.__name__

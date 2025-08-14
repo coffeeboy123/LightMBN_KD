@@ -19,7 +19,7 @@ class Market1501(ImageDataset):
         Zheng et al. Scalable Person Re-identification: A Benchmark. ICCV 2015.
 
     URL: `<http://www.liangzheng.org/Project/project_reid.html>`_
-    
+
     Dataset statistics:
         - identities: 1501 (+1 for background).
         - images: 12936 (train) + 3368 (query) + 15913 (gallery).
@@ -31,8 +31,8 @@ class Market1501(ImageDataset):
     def __init__(self, root='', market1501_500k=False, **kwargs):
         self.root = osp.abspath(osp.expanduser(root))
         self.dataset_dir = osp.join(self.root, self.dataset_dir)
-        self.download_dataset(self.dataset_dir, self.dataset_url)
-        
+        #self.download_dataset(self.dataset_dir, self.dataset_url)
+
         # allow alternative directory structure
         self.data_dir = self.dataset_dir
         data_dir = osp.join(self.data_dir, 'Market-1501-v15.09.15')
@@ -42,7 +42,7 @@ class Market1501(ImageDataset):
             warnings.warn('The current data structure is deprecated. Please '
                           'put data folders such as "bounding_box_train" under '
                           '"Market-1501-v15.09.15".')
-        
+
         self.train_dir = osp.join(self.data_dir, 'bounding_box_train')
         self.query_dir = osp.join(self.data_dir, 'query')
         self.gallery_dir = osp.join(self.data_dir, 'bounding_box_test')
@@ -75,10 +75,10 @@ class Market1501(ImageDataset):
         for img_path in img_paths:
             pid, _ = map(int, pattern.search(img_path).groups())
             if pid == -1:
-                continue # junk images are just ignored
+                continue  # junk images are just ignored
             pid_container.add(pid)
         ####### modified #######
-        pid2label = {pid:label for label, pid in enumerate(sorted(pid_container))}
+        pid2label = {pid: label for label, pid in enumerate(sorted(pid_container))}
         # pid2label = {pid:label for label, pid in enumerate(pid_container)}
 
         ########################
@@ -87,10 +87,10 @@ class Market1501(ImageDataset):
         for img_path in img_paths:
             pid, camid = map(int, pattern.search(img_path).groups())
             if pid == -1:
-                continue # junk images are just ignored
+                continue  # junk images are just ignored
             assert 0 <= pid <= 1501  # pid == 0 means background
             assert 1 <= camid <= 6
-            camid -= 1 # index starts from 0
+            camid -= 1  # index starts from 0
             if relabel:
                 pid = pid2label[pid]
             data.append((img_path, pid, camid))

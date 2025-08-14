@@ -21,47 +21,18 @@ class LMBN_n_student_11(nn.Module):
         self.backone = nn.Sequential(
             osnet.conv1,
             osnet.maxpool,
-            nn.Conv2d(16, 32, kernel_size=3, padding=1, groups=16, bias=False),  # groups=128
-            nn.BatchNorm2d(32),
-            nn.ReLU(inplace=True),
-            nn.AvgPool2d(2, stride=2)
+            LightConv3x3(16, 32),
+            nn.AvgPool2d(2, stride=2),
+            LightConv3x3(32, 64),
+            nn.AvgPool2d(2, stride=2),
+            LightConv3x3(64, 128),
+            nn.Conv2d(128, 512, kernel_size=1, groups=128, bias=False),  # groups=128
+            nn.BatchNorm2d(512),
+            nn.ReLU(inplace=True)
         )
 
-        self.global_branch = nn.Sequential(nn.Conv2d(32, 64, kernel_size=3, padding=1, groups=32, bias=False),
-                                           nn.BatchNorm2d(64),
-                                           nn.ReLU(inplace=True),
-                                           nn.AvgPool2d(2, stride=2),
-                                           nn.Conv2d(64, 128, kernel_size=3, padding=1, groups=64, bias=False),
-                                           nn.BatchNorm2d(128),
-                                           nn.ReLU(inplace=True),
-                                           nn.Conv2d(128, 512, kernel_size=1, groups=128, bias=False),  # groups=128
-                                           nn.BatchNorm2d(512),
-                                           nn.ReLU(inplace=True)
-                                           )
 
-        self.partial_branch = nn.Sequential(nn.Conv2d(32, 64, kernel_size=3, padding=1, groups=32, bias=False),
-                                           nn.BatchNorm2d(64),
-                                           nn.ReLU(inplace=True),
-                                           nn.AvgPool2d(2, stride=2),
-                                           nn.Conv2d(64, 128, kernel_size=3, padding=1, groups=64, bias=False),
-                                           nn.BatchNorm2d(128),
-                                           nn.ReLU(inplace=True),
-                                           nn.Conv2d(128, 512, kernel_size=1, groups=128, bias=False),  # groups=128
-                                           nn.BatchNorm2d(512),
-                                           nn.ReLU(inplace=True)
-                                           )
 
-        self.channel_branch = nn.Sequential(nn.Conv2d(32, 64, kernel_size=3, padding=1, groups=32, bias=False),
-                                           nn.BatchNorm2d(64),
-                                           nn.ReLU(inplace=True),
-                                           nn.AvgPool2d(2, stride=2),
-                                           nn.Conv2d(64, 128, kernel_size=3, padding=1, groups=64, bias=False),
-                                           nn.BatchNorm2d(128),
-                                           nn.ReLU(inplace=True),
-                                           nn.Conv2d(128, 512, kernel_size=1, groups=128, bias=False),  # groups=128
-                                           nn.BatchNorm2d(512),
-                                           nn.ReLU(inplace=True)
-                                           )
         self.global_pooling = nn.AdaptiveAvgPool2d((1, 1))
         self.partial_pooling = nn.AdaptiveAvgPool2d((2, 1))
         self.channel_pooling = nn.AdaptiveAvgPool2d((1, 1))
@@ -100,9 +71,9 @@ class LMBN_n_student_11(nn.Module):
 
         x = self.backone(x)
 
-        glo = self.global_branch(x)
-        par = self.partial_branch(x)
-        cha = self.channel_branch(x)
+        glo = x
+        par = x
+        cha = x
 
         if self.activation_map:
             glo_ = glo
@@ -155,7 +126,7 @@ class LMBN_n_student_11(nn.Module):
             return torch.stack([f_glo[0], f_glo_drop[0], f_p0[0], f_p1[0], f_p2[0], f_c0[0], f_c1[0]], dim=2)
             # return torch.stack([f_glo_drop[0], f_p0[0], f_p1[0], f_p2[0], f_c0[0], f_c1[0]], dim=2)
 
-        return ([f_glo[1], f_glo_drop[1], f_p0[1], f_p1[1], f_p2[1], f_c0[1], f_c1[1]], fea), torch.stack([f_glo[1], f_glo_drop[1], f_p0[1], f_p1[1], f_p2[1], f_c0[1], f_c1[1]], dim=1), torch.stack([f_glo[-1], f_glo_drop[-1], f_p0[-1], f_p1[-1], f_p2[-1], f_c0[-1], f_c1[-1]], dim=2)
+        return [f_glo[1], f_glo_drop[1], f_p0[1], f_p1[1], f_p2[1], f_c0[1], f_c1[1]], fea
 
     def weights_init_kaiming(self, m):
         classname = m.__class__.__name__

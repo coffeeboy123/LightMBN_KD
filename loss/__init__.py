@@ -16,8 +16,8 @@ from loss.multi_similarity_loss import MultiSimilarityLoss
 from loss.focal_loss import FocalLoss
 from loss.osm_caa_loss import OSM_CAA_Loss
 from loss.center_loss import CenterLoss
-from .kd_logic_loss import KDLogicLoss
-import torch.nn.functional as F
+from .kd_logic_loss import KLLogicLoss
+
 
 class LossFunction:
     def __init__(self, args, ckpt):
@@ -27,6 +27,9 @@ class LossFunction:
         self.nGPU = args.nGPU
         self.args = args
         self.loss = []
+        ce_value = None
+        ms_value = None
+        kl_value = None
         for loss in args.loss.split("+"):
             weight, loss_type = loss.split("*")
             if loss_type == "CrossEntropy":
@@ -45,10 +48,6 @@ class LossFunction:
                     max_iter=args.T,
                     num_anchors=args.num_anchors,
                 )
-            elif loss_type == "KD_L1_Loss":
-                # Dummy placeholder. 실제 계산은 Engine에서 F.mse_loss로 진행되므로 function은 None.
-                loss_function = None
-
             elif loss_type == "MSLoss":
                 loss_function = MultiSimilarityLoss(margin=args.margin)
             elif loss_type == "Focal":
@@ -59,127 +58,111 @@ class LossFunction:
                 loss_function = CenterLoss(
                     num_classes=args.num_classes, feat_dim=args.feats
                 )
-            elif loss_type == "KD_Logic_Loss":
-                loss_function = KDLogicLoss(temperature=args.kd_temp)
-
-            elif loss_type == "KD_Feature_L2":
-                loss_function = None  # 직접 F.mse_loss로 계산하므로 함수는 필요 없음
+            elif loss_type == "KL_Logic_Loss":
+                loss_function = KLLogicLoss(temperature=args.kl_temp)
+            elif loss_type == "L2":
+                loss_function = nn.MSELoss()
 
             self.loss.append(
                 {"type": loss_type, "weight": float(weight), "function": loss_function}
             )
-
-
-
 
         if len(self.loss) > 1:
             self.loss.append({"type": "Total", "weight": 0, "function": None})
 
         self.log = torch.Tensor()
 
-    def compute(self, outputs, labels, feature_student=None, feature_teacher=None, logic_student=None, logic_teacher=None, feature_map_student=None, feature_map_teacher=None):
+    def compute(self, logic_student, labels, feature_student, logic_teacher, kl_student, kl_teacher, mid_student, mid_teacher):
         losses = []
 
         for i, l in enumerate(self.loss):
             if l["type"] in ["CrossEntropy"]:
-                if isinstance(outputs[0], list):
-                    loss = [l["function"](output, labels) for output in outputs[0]]
-                elif isinstance(outputs[0], torch.Tensor):
-                    loss = [l["function"](outputs[0], labels)]
+                if isinstance(logic_student, list):
+                    loss = [l["function"](output, labels) for output in logic_student]
+                elif isinstance(logic_student, torch.Tensor):
+                    loss = [l["function"](logic_student, labels)]
                 else:
-                    raise TypeError("Unexpected type: {}".format(type(outputs[0])))
+                    raise TypeError("Unexpected type: {}".format(type(logic_student)))
 
                 loss = sum(loss)
                 effective_loss = l["weight"] * loss
                 losses.append(effective_loss)
+                ce_value = effective_loss.item()
 
                 self.log[-1, i] += effective_loss.item()
 
             elif l["type"] in ["Triplet", "MSLoss"]:
-                if isinstance(outputs[-1], list):
-                    loss = [l["function"](output, labels) for output in outputs[-1]]
-                elif isinstance(outputs[-1], torch.Tensor):
-                    loss = [l["function"](outputs[-1], labels)]
+                if isinstance(feature_student, list):
+                    loss = [l["function"](output, labels) for output in feature_student]
+                elif isinstance(feature_student, torch.Tensor):
+                    loss = [l["function"](feature_student, labels)]
                 else:
-                    raise TypeError("Unexpected type: {}".format(type(outputs[-1])))
+                    raise TypeError("Unexpected type: {}".format(type(feature_student)))
                 loss = sum(loss)
                 effective_loss = l["weight"] * loss
                 losses.append(effective_loss)
+                ms_value = effective_loss.item()
                 self.log[-1, i] += effective_loss.item()
 
             elif l["type"] in ["GroupLoss"]:
-                if isinstance(outputs[-1], list):
+                if isinstance(outputs[1], list):
                     loss = [
                         l["function"](output[0], labels, output[1])
-                        for output in zip(outputs[-1], outputs[0][:3])
+                        for output in zip(outputs[1], outputs[0][:3])
                     ]
                 elif isinstance(outputs[-1], torch.Tensor):
-                    loss = [l["function"](outputs[-1], labels)]
+                    loss = [l["function"](outputs[1], labels)]
                 else:
-                    raise TypeError("Unexpected type: {}".format(type(outputs[-1])))
+                    raise TypeError("Unexpected type: {}".format(type(outputs[1])))
                 loss = sum(loss)
                 effective_loss = l["weight"] * loss
                 losses.append(effective_loss)
                 self.log[-1, i] += effective_loss.item()
 
             elif l["type"] in ["CenterLoss"]:
-                if isinstance(outputs[-1], list):
-                    loss = [l["function"](output, labels) for output in outputs[-1]]
-                elif isinstance(outputs[-1], torch.Tensor):
-                    loss = [l["function"](outputs[-1], labels)]
+                if isinstance(outputs[1], list):
+                    loss = [l["function"](output, labels) for output in outputs[1]]
+                elif isinstance(outputs[1], torch.Tensor):
+                    loss = [l["function"](outputs[1], labels)]
                 else:
-                    raise TypeError("Unexpected type: {}".format(type(outputs[-1])))
+                    raise TypeError("Unexpected type: {}".format(type(outputs[1])))
 
                 loss = sum(loss)
                 effective_loss = l["weight"] * loss
                 losses.append(effective_loss)
                 self.log[-1, i] += effective_loss.item()
-            elif l["type"] == "KD_L1_Loss":
-                if feature_student is None or feature_teacher is None:
-                    raise ValueError("KD_L1_Loss requires both feature_student and feature_teacher")
 
-                loss = F.l1_loss(feature_student, feature_teacher)
-
-                effective_loss = l["weight"] * loss
-                losses.append(effective_loss)
-                self.log[-1, i] += effective_loss.item()
-
-            elif l["type"] == "KD_Logic_Loss":
+            elif l["type"] == "KL_Logic_Loss":
                 if logic_student is None or logic_teacher is None:
-                    raise ValueError("KD_Logic_Loss requires both logic_student and logic_teacher")
+                    raise ValueError("KL_Logic_Loss requires both logic_student and logic_teacher")
 
-                loss = l["function"](logic_student, logic_teacher)
-
-                effective_loss = l["weight"] * loss
-                losses.append(effective_loss)
-                self.log[-1, i] += effective_loss.item()
-
-            elif l["type"] == "KD_Feature_L2":
-                if feature_map_student is None or feature_map_teacher is None:
-                    raise ValueError("KD_Feature_L2 requires both feature_map_student and feature_map_teacher")
-
-                if isinstance(feature_map_student, list) and isinstance(feature_map_teacher, list):
-                    # 각 branch별 feature map 비교 (같은 길이 가정)
-                    loss = sum(F.mse_loss(f_s, f_t) for f_s, f_t in zip(feature_map_student, feature_map_teacher))
-                else:
-                    loss = F.mse_loss(feature_map_student, feature_map_teacher)
+                loss = l["function"](kl_student, kl_teacher)
 
                 effective_loss = l["weight"] * loss
                 losses.append(effective_loss)
                 self.log[-1, i] += effective_loss.item()
+                kl_value = effective_loss.item()
 
-
-
+            elif l["type"] == "L2":
+                # 보통 KD 로짓 쌍(학생/티처)을 L2로 맞춥니다.
+                if kl_student is None or kl_teacher is None:
+                    raise ValueError("L2 loss requires both kl_student and kl_teacher")
+                loss = l["function"](mid_student, mid_teacher)
+                effective_loss = l["weight"] * loss
+                losses.append(effective_loss)
+                self.log[-1, i] += effective_loss.item()
+                l2_value = effective_loss.item()
 
             else:
                 pass
 
         loss_sum = sum(losses)
 
+
         if len(self.loss) > 1:
             self.log[-1, -1] += loss_sum.item()
 
-        return loss_sum
+        return loss_sum, ce_value, ms_value, kl_value, l2_value
 
     def start_log(self):
         self.log = torch.cat((self.log, torch.zeros(1, len(self.loss))))

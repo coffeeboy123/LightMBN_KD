@@ -1,7 +1,7 @@
 import copy
 import torch
 from torch import nn
-from .osnet import osnet_x1_0, OSBlock, osnet_x0_25, osnet_student
+from .osnet import osnet_x1_0, OSBlock, osnet_x0_25
 from .attention import BatchDrop, BatchFeatureErase_Top, PAM_Module, CAM_Module, SE_Module, Dual_Module
 from .bnneck import BNNeck, BNNeck3
 from torch.nn import functional as F
@@ -42,9 +42,13 @@ class LMBN_n_teacher_2(nn.Module):
         self.reduction_3 = copy.deepcopy(reduction)
         self.reduction_4 = copy.deepcopy(reduction)
 
-        self.shared = nn.Sequential(nn.Conv2d(
+        self.ch0_pointwise = nn.Sequential(nn.Conv2d(
             self.chs, args.feats, 1, bias=False), nn.BatchNorm2d(args.feats), nn.ReLU(True))
-        self.weights_init_kaiming(self.shared)
+        self.weights_init_kaiming(self.ch0_pointwise)
+
+        self.ch1_pointwise = nn.Sequential(nn.Conv2d(
+            self.chs, args.feats, 1, bias=False), nn.BatchNorm2d(args.feats), nn.ReLU(True))
+        self.weights_init_kaiming(self.ch1_pointwise)
 
         self.reduction_ch_0 = BNNeck(
             args.feats, args.num_classes, return_f=True)
@@ -107,20 +111,20 @@ class LMBN_n_teacher_2(nn.Module):
 
         c0 = cha[:, :self.chs, :, :]
         c1 = cha[:, self.chs:, :, :]
-        c0 = self.shared(c0)
-        c1 = self.shared(c1)
+        c0 = self.ch0_pointwise(c0)
+        c1 = self.ch1_pointwise(c1)
         f_c0 = self.reduction_ch_0(c0)
         f_c1 = self.reduction_ch_1(c1)
 
         ################
 
-        fea = [f_glo[-1], f_glo_drop[-1], f_p0[-1]]
+        fea = [f_glo[-1], f_glo_drop[-1], f_p0[-1], f_p1[-1], f_p2[-1], f_c0[-1], f_c1[-1]]
 
         if not self.training:
             return torch.stack([f_glo[0], f_glo_drop[0], f_p0[0], f_p1[0], f_p2[0], f_c0[0], f_c1[0]], dim=2)
             # return torch.stack([f_glo_drop[0], f_p0[0], f_p1[0], f_p2[0], f_c0[0], f_c1[0]], dim=2)
 
-        return [f_glo[1], f_glo_drop[1], f_p0[1], f_p1[1], f_p2[1], f_c0[1], f_c1[1]], fea, torch.stack([f_glo[0], f_glo_drop[0], f_p0[0], f_p1[0], f_p2[0], f_c0[0], f_c1[0]], dim=2)
+        return [f_glo[1], f_glo_drop[1], f_p0[1], f_p1[1], f_p2[1], f_c0[1], f_c1[1]], fea
 
     def weights_init_kaiming(self, m):
         classname = m.__class__.__name__

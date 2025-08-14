@@ -12,15 +12,17 @@ parser.add_argument("--config", type=str, default="", help='config path')
 
 
 parser.add_argument("--datadir", type=str,
-                    default="D:/LightMBN-master-kd-logic/ReIDataset_SYSU_A", help='dataset directory root')
+                    default="C:/Users/Howon_LEE/Desktop/Hard_Data_validation/ReIDataset_SYSU_A", help='dataset directory root')
 parser.add_argument('--data_train', type=str,
+                    default='SYSU', help='train dataset name')
+parser.add_argument('--data_validation', type=str,
                     default='SYSU', help='train dataset name')
 parser.add_argument('--data_test', type=str,
                     default='SYSU', help='test dataset name')
 parser.add_argument('--cuhk03_labeled', action='store_true',
                     help='if raise, use cuhk03-labeled dataset, otherwise cuhk03-detected dataset')
 
-parser.add_argument("--epochs", type=int, default=50,
+parser.add_argument("--epochs", type=int, default=70,
                     help='number of epochs to train')
 parser.add_argument('--test_every', type=int, default=1,
                     help='do test per every N epochs')
@@ -35,9 +37,13 @@ parser.add_argument('--sampler', type=str, default='True',
                     help='do use sampler in dataloader')
 
 
-parser.add_argument('--model_student', default='LMBN_n_student_2_7', help='model name')
-parser.add_argument('--model_teacher', default='LMBN_n_teacher_6', help='model name')
-parser.add_argument('--loss', type=str, default='0.5*CrossEntropy+0.5*MSLoss+1.0*KD_L1_Loss+0.1*KD_Logic_Loss',
+parser.add_argument('--model_student', default='LMBN_n_osnet_x0_25_student', help='model name')
+parser.add_argument('--model_teacher', default='LMBN_n_fusion_3', help='model name')
+parser.add_argument('--teacher_pretrain', type=str, default='C:/Users/Howon_LEE/Downloads/LMBN_n_fusion_3_SYSU_A_6_2_0.0006_12_300_model-best.pth', help='teacher model checkpoint path')
+parser.add_argument('--kl_temp', type=float, default=4.0, help='Temperature for logic KL')
+
+
+parser.add_argument('--loss', type=str, default='0.5*CrossEntropy+0.5*MSLoss+0.2*KL_Logic_Loss',
                     help='loss function configuration')
 parser.add_argument("--if_labelsmooth", action='store_true',
                     help='Label Smoothing Trick')
@@ -56,7 +62,9 @@ parser.add_argument("--h_ratio", type=float, default=0.3,
 parser.add_argument('--act', type=str, default='relu',
                     help='activation function')
 parser.add_argument('--pool', type=str, default='avg', help='pool function')
-parser.add_argument('--feats', type=int, default=512,
+parser.add_argument('--feats_teacher', type=int, default=512,
+                    help='number of feature maps')
+parser.add_argument('--feats_student', type=int, default=128,
                     help='number of feature maps')
 parser.add_argument('--height', type=int, default=384,
                     help='height of the input image')
@@ -99,7 +107,7 @@ parser.add_argument("--w_cosine_annealing", action='store_true',
 
 
 parser.add_argument('--parts', type=int, default=6, help='parts of PCB model')
-parser.add_argument("--margin", type=float, default=0.7, help='')
+parser.add_argument("--margin", type=float, default=0.8, help='')
 parser.add_argument("--re_rank", action='store_true',
                     help='if raise, use re-ranking')
 parser.add_argument("--cutout", action='store_true',
@@ -133,8 +141,12 @@ parser.add_argument('--reset', action='store_true', help='reset the training')
 parser.add_argument('--wandb', action='store_true', help='use wandb')
 parser.add_argument('--wandb_name', type=str, default='', help='wandb project name')
 
-parser.add_argument('--teacher_pretrain', type=str, default='D:/LightMBN-master-kd-logic/LMBN_n_teacher_6_SYSU_A_model-best.pth', help='teacher model checkpoint path')
-parser.add_argument('--kd_temp', type=float, default=4.0, help='Temperature for logic KD')
+parser.add_argument(
+    '--seed',
+    type=int,
+    default=251,
+    help='random seed for reproducibility (default: 42)'
+)
 
 
 args = parser.parse_args()

@@ -15,14 +15,6 @@ from torch.utils.collect_env import get_pretty_env_info
 import yaml
 import torch
 
-def count_params(module, name=""):
-    total = 0
-    for n, p in module.named_parameters():
-        if p.requires_grad:
-            total += p.numel()
-    print(f"{name}: {total:,}")
-    return total
-
 
 if __name__ == '__main__':
     if args.config != "":
@@ -37,28 +29,12 @@ if __name__ == '__main__':
     loader = data_v2.ImageDataManager(args)
     model_student = make_model_student(args, ckpt)
     model_teacher = make_model_teacher(args, ckpt)
-    model_teacher.eval()
-    for param in model_teacher.parameters():
-        param.requires_grad = False
     optimzer = make_optimizer(args, model_student)
-    loss = make_loss(args, ckpt)
+    loss = make_loss(args, ckpt) if not args.test_only else None
 
     if args.teacher_pretrain != "":
         ckpt.load_pretrained_weights(model_teacher, args.teacher_pretrain)
 
-    total_params = sum(p.numel() for p in model_student.parameters() if p.requires_grad)
-
-    # 특징 추출기 파라미터만 따로 계산
-    feature_params = 0
-    feature_params += count_params(model_student.backone, "backone")
-    feature_params += count_params(model_student.global_branch, "global_branch")
-    feature_params += count_params(model_student.partial_branch, "partial_branch")
-    feature_params += count_params(model_student.channel_branch, "channel_branch")
-    feature_params += count_params(model_student.shared, "shared")
-    feature_params += count_params(model_student.batch_drop_block.drop_batch_bottleneck, "drop_batch_bottleneck")
-
-    print(f"\n[총 파라미터 수]: {total_params:,}")
-    print(f"[특징 추출기 파라미터 수]: {feature_params:,}")
 
     start = -1
     if args.load != "":
@@ -66,8 +42,6 @@ if __name__ == '__main__':
             osp.join(ckpt.dir, "model-latest.pth"), model_student, optimzer
         )
         start = start - 1
-    if args.pre_train != "":
-        ckpt.load_pretrained_weights(model_student, args.pre_train)
 
     scheduler = make_scheduler(args, optimzer, start)
 
@@ -85,7 +59,9 @@ if __name__ == '__main__':
     while not engine.terminate():
         n += 1
         engine.train()
+        engine.validation()
         if args.test_every != 0 and n % args.test_every == 0:
             engine.test()
         elif n == args.epochs:
             engine.test()
+    engine.close()

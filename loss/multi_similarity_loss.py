@@ -53,25 +53,28 @@ class MultiSimilarityLoss(nn.Module):
         #         1 + torch.sum(torch.exp(self.scale_neg * (neg_pair - self.thresh))))
         #     loss.append(pos_loss + neg_loss)
 
-        mask = labels.expand(batch_size, batch_size).eq(
-            labels.expand(batch_size, batch_size).t())
+        mask = labels.expand(batch_size, batch_size).eq(labels.expand(batch_size, batch_size).t())
         for i in range(batch_size):
             pos_pair_ = sim_mat[i][mask[i]]
             pos_pair_ = pos_pair_[pos_pair_ < 1 - epsilon]
             neg_pair_ = sim_mat[i][mask[i] == 0]
 
-            neg_pair = neg_pair_[neg_pair_ + self.margin > min(pos_pair_)]
-            pos_pair = pos_pair_[pos_pair_ - self.margin < max(neg_pair_)]
-
-            if len(neg_pair) < 1 or len(pos_pair) < 1:
+            # 만약 pos_pair_가 빈 시퀀스라면 해당 앵커를 건너뛰기
+            if pos_pair_.numel() == 0:
                 continue
 
-            # weighting step
+            neg_pair = neg_pair_[neg_pair_ + self.margin > pos_pair_.min()]
+            pos_pair = pos_pair_[pos_pair_ - self.margin < neg_pair_.max()] if neg_pair_.numel() > 0 else pos_pair_
+
+            if pos_pair.numel() == 0 or neg_pair.numel() == 0:
+                continue
+
             pos_loss = 1.0 / self.scale_pos * torch.log(
                 1 + torch.sum(torch.exp(-self.scale_pos * (pos_pair - self.thresh))))
             neg_loss = 1.0 / self.scale_neg * torch.log(
                 1 + torch.sum(torch.exp(self.scale_neg * (neg_pair - self.thresh))))
             loss.append(pos_loss + neg_loss)
+
             # pos_loss = 
 
 

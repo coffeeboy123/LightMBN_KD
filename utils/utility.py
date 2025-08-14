@@ -11,19 +11,30 @@ from collections import OrderedDict
 from shutil import copyfile
 import pickle
 import warnings
+import re
+from functools import partial
+
+def _sanitize_filename(name: str) -> str:
+    # Windows에서 금지된 문자들을 '_'로 치환
+    name = re.sub(r'[\\/:*?"<>|]', '_', name)
+    return name
+loss_abbr = {
+    'CrossEntropy': 'C',
+    'MSLoss': 'M',
+    'KL_Logic_Loss': 'K',
+    'L2': 'L',
+}
+
+# 약어 변환 함수
+def shorten_loss_name(loss_str):
+    for long_name, short_name in loss_abbr.items():
+        loss_str = loss_str.replace(long_name, short_name)
+    return loss_str
 
 try:
     import neptune
 except Exception:
     print('Neptune is not installed.')
-
-import re
-
-def sanitize_filename(s):
-    s = s.replace("*", "x")
-    s = s.replace("+", "_")
-    s = re.sub(r'[^a-zA-Z0-9_\.]', '', s)
-    return s
 
 
 class checkpoint():
@@ -32,50 +43,42 @@ class checkpoint():
         self.log = torch.Tensor()
         self.since = datetime.datetime.now()
         now = datetime.datetime.now().strftime('%Y-%m-%d-%H-%M-%S')
+        self.loss_history = []  # 매 epoch 평균 loss를 여기에 append
+        self.validation_loss_history = []
+
+
+
 
         def _make_dir(path):
             if not os.path.exists(path):
                 os.makedirs(path)
 
-        ROOT_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
-
-        if args.load == '':
-            if args.save == '':
-                args.save = now
-            self.dir = '/content/gdrive/MyDrive/LightMBN_Save_NEW' + '/experiment/' + args.save
-        else:
-            self.dir = '/content/gdrive/MyDrive/LightMBN_Save_NEW' + '/experiment/' + args.save
-            if not os.path.exists(self.dir):
-                args.load = ''
-            args.save = args.load
-
         self.local_dir = None
-        if ROOT_PATH[:11] == '/content/dr':
-            self.dir = osp.join('/content/drive/Shareddrives/Colab',
-                                self.dir[self.dir.find('experiment'):])
-            self.local_dir = ROOT_PATH + '/experiment/' + self.dir.split('/')[-1]
-            _make_dir(self.local_dir)
 
-        _make_dir(self.dir)
+        ROOT_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 
         last_folder = os.path.basename(args.datadir.rstrip('/\\'))
         if '_' in last_folder:
             self.fold = last_folder.split('_')[-1].upper()
         else:
             self.fold = 'A'
-        
 
-        loss_tag = sanitize_filename(args.loss)
-        epoch_tag = f"{args.epochs}epoch"
+        tag_loss = args.loss.replace('*', 'x').replace('+', '_')
+        tag_loss = shorten_loss_name(tag_loss)  # 약어 변환
+        safe_loss = _sanitize_filename(tag_loss)
 
-        self.log_filename = f"{args.model_student}_{args.data_train}_{self.fold}_{loss_tag}_{epoch_tag}_log.txt"
-        self.map_log_filename = f"{args.model_student}_{args.data_train}_{self.fold}_{loss_tag}_{epoch_tag}_map_log.pt"
-        self.config_filename = f"{args.model_student}_{args.data_train}_{self.fold}_{loss_tag}_{epoch_tag}_config.yaml"
-        self.model_latest_filename = f"{args.model_student}_{args.data_train}_{self.fold}_{loss_tag}_{epoch_tag}_model-latest.pth"
-        self.model_best_filename = f"{args.model_student}_{args.data_train}_{self.fold}_{loss_tag}_{epoch_tag}_model-best.pth"
+        exp_folder = f"{args.model_student}_{args.model_teacher}_{args.kl_temp}_{safe_loss}_{args.data_train}_{self.fold}_{args.epochs}"
+        self.dir = os.path.join('/content/gdrive/MyDrive/SAVE_VAL_KD', 'experiment', 'log', exp_folder)
+        _make_dir(self.dir)
 
-
+        # 아래 파일명들도 동일하게 safe_loss 사용
+        self.log_filename = f"{args.model_student}_{args.model_teacher}_{args.kl_temp}_{safe_loss}_{args.data_train}_{self.fold}_{args.epochs}_log.txt"
+        self.map_log_filename = f"{args.model_student}_{args.model_teacher}_{args.kl_temp}_{safe_loss}_{args.data_train}_{self.fold}_{args.epochs}map_log.pt"
+        self.config_filename = f"{args.model_student}_{args.model_teacher}_{args.kl_temp}_{safe_loss}_{args.data_train}_{self.fold}_{args.epochs}_config.yaml"
+        self.model_latest_filename = f"{args.model_student}_{args.model_teacher}_{args.kl_temp}_{safe_loss}_{args.data_train}_{self.fold}_{args.epochs}_model-latest.pth"
+        self.model_best_filename = f"{args.model_student}_{args.model_teacher}_{args.kl_temp}_{safe_loss}_{args.data_train}_{self.fold}_{args.epochs}_model-best.pth"
         map_log_path = os.path.join(self.dir, self.map_log_filename)
+
         if os.path.exists(map_log_path):
             self.log = torch.load(map_log_path)
 
@@ -85,7 +88,7 @@ class checkpoint():
         open_type = 'a' if os.path.exists(log_path) else 'w'
         self.log_file = open(log_path, open_type)
 
-        try:
+        try:              #Neptune 관련 코드인데 지워도 무방
             exp = neptune.init(args.nep_name, args.nep_token)
             if args.load == '':
                 self.exp = exp.create_experiment(name=self.dir.split('/')[-1],
@@ -106,6 +109,75 @@ class checkpoint():
 
         if self.local_dir is not None:
             copyfile(config_path, os.path.join(self.local_dir, self.config_filename))
+
+    def plot_losses(self, train_total, val_total, train_ce, val_ce, train_ms, val_ms, train_kl, val_kl, train_l2, val_l2):
+
+        # 1. Total Loss
+        fig = plt.figure()
+        plt.plot(range(1, len(train_total) + 1), train_total, label='Train Total', color='blue')
+        plt.plot(range(1, len(val_total) + 1), val_total, label='Val Total', color='orange')
+        plt.title(f'{self.args.model_student} Total Loss')
+        plt.xlabel('Epoch')
+        plt.ylabel('Total Loss')
+        plt.legend()
+        plt.grid(True)
+        plt.savefig(os.path.join(self.dir, f'{self.args.model_student}_{self.args.data_train}_{self.fold}_total_loss.png'),
+                    dpi=600)
+        plt.close(fig)
+
+        # 2. CrossEntropy Loss
+        if any(x is not None for x in train_ce):
+            fig = plt.figure()
+            plt.plot(range(1, len(train_ce) + 1), train_ce, label='Train CE', color='blue')
+            plt.plot(range(1, len(val_ce) + 1), val_ce, label='Val CE', color='orange')
+            plt.title(f'{self.args.model_student} CrossEntropy Loss')
+            plt.xlabel('Epoch')
+            plt.ylabel('CE Loss')
+            plt.legend()
+            plt.grid(True)
+            plt.savefig(os.path.join(self.dir, f'{self.args.model_student}_{self.args.data_train}_{self.fold}_ce_loss.png'),
+                        dpi=600)
+            plt.close(fig)
+
+        # 3. MS Loss
+        if any(x is not None for x in train_ms):
+            fig = plt.figure()
+            plt.plot(range(1, len(train_ms) + 1), train_ms, label='Train MS', color='blue')
+            plt.plot(range(1, len(val_ms) + 1), val_ms, label='Val MS', color='orange')
+            plt.title(f'{self.args.model_student} MultiSimilarity Loss')
+            plt.xlabel('Epoch')
+            plt.ylabel('MS Loss')
+            plt.legend()
+            plt.grid(True)
+            plt.savefig(os.path.join(self.dir, f'{self.args.model_student}_{self.args.data_train}_{self.fold}_ms_loss.png'),
+                        dpi=600)
+            plt.close(fig)
+
+        if any(x is not None for x in train_kl):
+            fig = plt.figure()
+            plt.plot(range(1, len(train_kl) + 1), train_kl, label='Train KL', color='blue')
+            plt.plot(range(1, len(val_kl) + 1), val_kl, label='Val KL', color='orange')
+            plt.title(f'{self.args.model_student} KL Loss')
+            plt.xlabel('Epoch')
+            plt.ylabel('KL Loss')
+            plt.legend()
+            plt.grid(True)
+            plt.savefig(os.path.join(self.dir, f'{self.args.model_student}_{self.args.data_train}_{self.fold}_kl_loss.png'),
+                        dpi=600)
+            plt.close(fig)
+
+        if any(x is not None for x in train_l2):
+            fig = plt.figure()
+            plt.plot(range(1, len(train_l2) + 1), train_l2, label='Train L2', color='blue')
+            plt.plot(range(1, len(val_l2) + 1), val_l2, label='Val L2', color='orange')
+            plt.title(f'{self.args.model_student} L2 Loss')
+            plt.xlabel('Epoch')
+            plt.ylabel('L2 Loss')
+            plt.legend()
+            plt.grid(True)
+            plt.savefig(os.path.join(self.dir, f'{self.args.model_student}_{self.args.data_train}_{self.fold}_l2_loss.png'),
+                        dpi=600)
+            plt.close(fig)
 
     def add_log(self, log):
         self.log = torch.cat([self.log, log])
@@ -140,7 +212,7 @@ class checkpoint():
         labels = ['mAP', 'rank1', 'rank3', 'rank5', 'rank10']
         fig = plt.figure()
 
-        title = f'{self.args.model} on {self.args.data_test} ({self.fold}-fold)'
+        title = f'{self.args.model_student} on {self.args.data_test} ({self.fold}-fold)'
         plt.title(title)
 
         for i in range(len(labels)):
@@ -151,7 +223,7 @@ class checkpoint():
         plt.ylabel('mAP/rank')
         plt.grid(True)
 
-        pdf_name = f'{self.args.model}_{self.args.data_test}_{self.fold}_result.pdf'
+        pdf_name = f'{self.args.model_student}_{self.args.data_test}_{self.fold}_result.png'
         plt.savefig(os.path.join(self.dir, pdf_name), dpi=600)
         plt.close(fig)
 

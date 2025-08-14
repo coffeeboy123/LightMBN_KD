@@ -1,8 +1,9 @@
-import torch
+import random
 import numpy as np
+import torch
+from torch import nn
 from utils.functions import evaluation
 from utils.re_ranking import re_ranking, re_ranking_gpu
-import torch.nn.functional as F
 
 try:
     import wandb
@@ -10,10 +11,28 @@ except ImportError:
     wandb = None
 
 
+def set_seed(seed: int):
+    """실험 재현성을 위한 시드 고정"""
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    # CuDNN determinism
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+
+
 class Engine:
     def __init__(self, args, model_student, model_teacher, optimizer, scheduler, loss, loader, ckpt):
+        # ─── 재현성: 시드 고정 ────────────────────────────────
+        if hasattr(args, 'seed'):
+            set_seed(args.seed)
+        # ──────────────────────────────────────────────────────
+
         self.args = args
         self.train_loader = loader.train_loader
+        self.validation_loader = loader.validation_loader
         self.test_loader = loader.test_loader
         self.query_loader = loader.query_loader
         self.testset = loader.galleryset
@@ -29,6 +48,19 @@ class Engine:
         self.lr = 0.0
         self.device = torch.device("cpu" if args.cpu else "cuda")
 
+        self.adapter = nn.Conv2d(96, 384, kernel_size=1, bias=False).to(self.device)
+        self.weights_init_kaiming(self.adapter)
+        self.optimizer.add_param_group({'params': self.adapter.parameters()})
+
+        self.train_ce_loss_history = []
+        self.train_ms_loss_history = []
+        self.train_kl_loss_history = []
+        self.train_l2_loss_history = []
+        self.val_ce_loss_history = []
+        self.val_ms_loss_history = []
+        self.val_kl_loss_history = []
+        self.val_l2_loss_history = []
+
         if torch.cuda.is_available():
             self.ckpt.write_log("[INFO] GPU: " + torch.cuda.get_device_name(0))
 
@@ -42,16 +74,26 @@ class Engine:
         else:
             self.wandb = False
 
+        from torch.utils.tensorboard import SummaryWriter
+        self.writer = SummaryWriter(log_dir=self.ckpt.dir)
+
     def train(self):
         epoch = self.scheduler.last_epoch
         lr = self.scheduler.get_last_lr()[0]
 
         if lr != self.lr:
             self.ckpt.write_log(
-                "[INFO] Epoch: {}\tLearning rate: {:.2e}  ".format(epoch + 1, lr)
+                "[INFO] Epoch: {}\tLearning rate: {:.2e}".format(epoch + 1, lr)
             )
             self.lr = lr
         self.loss.start_log()
+
+        running_loss = 0.0
+        ce_running_loss = 0.0
+        ms_running_loss = 0.0
+        kl_running_loss = 0.0
+        l2_running_loss = 0.0
+
         self.model_student.train()
 
         for batch, d in enumerate(self.train_loader):
@@ -61,12 +103,27 @@ class Engine:
             labels = labels.to(self.device)
 
             self.optimizer.zero_grad()
-            outputs_student, logic_student, feature_student, feature_map_student = self.model_student(inputs)
-            logic_teacher, feature_teacher, feature_map_teacher= self.model_teacher(inputs)
+            logic_student, feature_student, outputs_student, kl_student, mid_student = self.model_student(inputs)
+            self.model_teacher.eval()
+            with torch.no_grad():
+                logic_teacher, feature_teacher, outputs_teacher, kl_teacher, mid_teacher = self.model_teacher(inputs)
 
-            loss = self.loss.compute(outputs_student, labels, feature_student, feature_teacher, logic_student, logic_teacher, feature_map_student, feature_map_teacher)
+            mid_student = self.adapter(mid_student)
 
-            loss.backward()
+            total_loss, ce_loss, ms_loss, kl_loss, l2_loss= self.loss.compute(logic_student, labels, feature_student, logic_teacher, kl_student, kl_teacher, mid_student, mid_teacher)
+
+
+            running_loss += total_loss.item()
+            if ce_loss is not None:
+                ce_running_loss += ce_loss
+            if ms_loss is not None:
+                ms_running_loss += ms_loss
+            if kl_loss is not None:
+                kl_running_loss += kl_loss
+            if l2_loss is not None:
+                l2_running_loss += l2_loss
+
+            total_loss.backward()
             self.optimizer.step()
 
             self.ckpt.write_log(
@@ -80,12 +137,142 @@ class Engine:
                 end="" if batch + 1 != len(self.train_loader) else "\n",
             )
 
-            if self.wandb is True and wandb is not None:
+            if self.wandb and wandb is not None:
                 wandb.log(self.loss.get_loss_dict(batch))
 
         self.scheduler.step()
         self.loss.end_log(len(self.train_loader))
-        # self._save_checkpoint(epoch, 0., self.ckpt.dir, is_best=True)
+
+        avg_loss = running_loss / len(self.train_loader)
+        avg_ce = ce_running_loss / len(self.train_loader) if ce_running_loss != 0 else None
+        avg_ms = ms_running_loss / len(self.train_loader) if ms_running_loss != 0 else None
+        avg_kl = kl_running_loss / len(self.train_loader) if kl_running_loss != 0 else None
+        avg_l2 = l2_running_loss / len(self.train_loader) if l2_running_loss != 0 else None
+
+        # checkpoint에 기록
+        self.ckpt.loss_history.append(avg_loss)
+        self.train_ce_loss_history.append(avg_ce)
+        self.train_ms_loss_history.append(avg_ms)
+        self.train_kl_loss_history.append(avg_kl)
+        self.train_l2_loss_history.append(avg_l2)
+
+        self.writer.add_scalar('Loss/Train_Total', avg_loss, epoch + 1)
+        self.writer.add_scalar('Loss/Train_CE', avg_ce, epoch + 1)
+        self.writer.add_scalar('Loss/Train_MS', avg_ms, epoch + 1)
+        self.writer.add_scalar('Loss/Train_KL', avg_kl, epoch + 1)
+        self.writer.add_scalar('Loss/Train_L2', avg_l2, epoch + 1)
+
+        self._last_train_loss = avg_loss
+        self._last_train_ce = avg_ce
+        self._last_train_ms = avg_ms
+        self._last_train_kl = avg_kl
+        self._last_train_l2 = avg_l2
+
+
+
+        # loss curve 저장 (원하는 시점에—예: 매 epoch마다)
+
+    def validation(self):
+        epoch = self.scheduler.last_epoch
+        running_loss = 0.0
+        ce_running_loss = 0.0
+        ms_running_loss = 0.0
+        kl_running_loss = 0.0
+        l2_running_loss = 0.0
+        self.model_student.eval()
+        self.model_teacher.eval()
+        with torch.no_grad():  # <- 반드시 감싸주세요!
+            for batch, d in enumerate(self.validation_loader):
+                inputs, labels = self._parse_data_for_train(d)
+                inputs = inputs.to(self.device)
+                labels = labels.to(self.device)
+                logic_student, feature_student, outputs_student, kl_student, mid_student = self.model_student(inputs)
+
+                logic_teacher, feature_teacher, outputs_teacher, kl_teacher, mid_teacher = self.model_teacher(inputs)
+
+                mid_student = self.adapter(mid_student)
+
+                total_loss, ce_loss, ms_loss, kl_loss, l2_loss = self.loss.compute(logic_student, labels,
+                                                                                   feature_student, logic_teacher,
+                                                                                   kl_student, kl_teacher, mid_student,
+                                                                                   mid_teacher)
+
+                running_loss += total_loss.item()
+                if ce_loss is not None:
+                    ce_running_loss += ce_loss
+                if ms_loss is not None:
+                    ms_running_loss += ms_loss
+                if kl_loss is not None:
+                    kl_running_loss += kl_loss
+                if l2_loss is not None:
+                    kl_running_loss += l2_loss
+
+
+                self.ckpt.write_log(
+                    "\r[VAL] [{}/{}]\t{}/{}\t{}".format(
+                        epoch,
+                        self.args.epochs,
+                        batch + 1,
+                        len(self.validation_loader),
+                        self.loss.display_loss(batch),
+                    ),
+                    end="" if batch + 1 != len(self.validation_loader) else "\n",
+                )
+
+                if self.wandb and wandb is not None:
+                    wandb.log({"val_loss_step": total_loss.item()})
+
+        avg_loss = running_loss / len(self.validation_loader)
+        avg_ce = ce_running_loss / len(self.validation_loader) if ce_running_loss != 0 else None
+        avg_ms = ms_running_loss / len(self.validation_loader) if ms_running_loss != 0 else None
+        avg_kl = kl_running_loss / len(self.validation_loader) if kl_running_loss != 0 else None
+        avg_l2 = l2_running_loss / len(self.validation_loader) if l2_running_loss != 0 else None
+
+        self.ckpt.validation_loss_history.append(avg_loss)
+        self.val_ce_loss_history.append(avg_ce)
+        self.val_ms_loss_history.append(avg_ms)
+        self.val_kl_loss_history.append(avg_kl)
+        self.val_l2_loss_history.append(avg_l2)
+
+        self.ckpt.plot_losses(
+            self.ckpt.loss_history,  # total train loss
+            self.ckpt.validation_loss_history,  # total val loss
+            self.train_ce_loss_history,  # ce train loss
+            self.val_ce_loss_history,  # ce val loss
+            self.train_ms_loss_history,  # ms train loss
+            self.val_ms_loss_history,  # ms val loss
+            self.train_kl_loss_history,  # kl train loss
+            self.val_kl_loss_history,  # kl val loss
+            self.train_l2_loss_history,  # l2 train loss
+            self.val_l2_loss_history,  # l2 val loss
+        )
+
+        self.writer.add_scalar('Loss/Val_Total', avg_loss, epoch + 1)
+        self.writer.add_scalar('Loss/Val_CE', avg_ce, epoch + 1)
+        self.writer.add_scalar('Loss/Val_MS', avg_ms, epoch + 1)
+        self.writer.add_scalar('Loss/Val_KL', avg_kl, epoch + 1)
+        self.writer.add_scalar('Loss/Val_L2', avg_l2, epoch + 1)
+
+        self.writer.add_scalars('Loss/Total', {
+            'Train': self._last_train_loss,
+            'Val': avg_loss
+        }, epoch + 1)
+        self.writer.add_scalars('Loss/CE', {
+            'Train': self._last_train_ce,
+            'Val': avg_ce
+        }, epoch + 1)
+        self.writer.add_scalars('Loss/MS', {
+            'Train': self._last_train_ms,
+            'Val': avg_ms
+        }, epoch + 1)
+        self.writer.add_scalars('Loss/KL', {
+            'Train': self._last_train_kl,
+            'Val': avg_kl
+        }, epoch + 1)
+        self.writer.add_scalars('Loss/L2', {
+            'Train': self._last_train_l2,
+            'Val': avg_l2
+        }, epoch + 1)
 
     def test(self):
         epoch = self.scheduler.last_epoch
@@ -107,7 +294,15 @@ class Engine:
         else:
             dist = 1 - torch.mm(qf, gf.t()).cpu().numpy()
 
-        r, m_ap = evaluation(dist, query_ids, gallery_ids, query_cams, gallery_cams, 50)
+        r, m_ap = evaluation(
+            dist, query_ids, gallery_ids, query_cams, gallery_cams, 50
+        )
+
+        # (이하 생략 — 기존 코드 유지)
+        ...
+
+    # (나머지 메서드도 원본과 동일)
+
 
         self.ckpt.log[-1, 0] = epoch
         self.ckpt.log[-1, 1] = m_ap
@@ -117,14 +312,14 @@ class Engine:
         self.ckpt.log[-1, 5] = r[9]
 
         # ✅ 이전 기록만으로 best rank1/mAP 확인
-        previous_log = self.ckpt.log[:-1, :]  # exclude current test log
-
+        previous_log = self.ckpt.log[:-1, :]  # exclude current
         if previous_log.shape[0] > 0:
-            best_rank1 = previous_log[:, 2].max(0)
-            best_idx = best_rank1.indices.item()
-            best_rank1_value = previous_log[best_idx, 2].item()
-            best_map_value = previous_log[best_idx, 1].item()
-            best_epoch = int(previous_log[best_idx, 0].item())
+            # 최대 rank1을 가지는 모든 인덱스 추출
+            best_rank1_value = previous_log[:, 2].max().item()
+            rank1_mask = previous_log[:, 2] == best_rank1_value
+            best_map_value = previous_log[rank1_mask, 1].max().item()
+
+            best_epoch = int(previous_log[(rank1_mask) & (previous_log[:, 1] == best_map_value), 0][0].item())
         else:
             best_rank1_value = 0
             best_map_value = 0
@@ -169,6 +364,21 @@ class Engine:
                     "rank10": r[9],
                 }
             )
+        # TensorBoard 기록 추가
+        self.writer.add_scalars('Eval/Rank', {
+            'rank1': r[0],
+            'rank3': r[2],
+            'rank5': r[4],
+            'rank10': r[9],
+        }, epoch + 1)
+        self.writer.add_scalar('Eval/mAP', m_ap, epoch + 1)
+
+        self.ckpt.plot_map_rank(epoch + 1)
+
+
+    def close(self):
+        self.writer.close()
+
 
     def fliphor(self, inputs):
         inv_idx = torch.arange(inputs.size(3) - 1, -1, -1).long()  # N x C x H x W
@@ -183,12 +393,12 @@ class Engine:
             input_img = inputs.to(self.device)
             outputs = self.model_student(input_img)
 
-            f1 = outputs.data.cpu()
+            f1 = outputs[2].data.cpu()
             # flip
             inputs = inputs.index_select(3, torch.arange(inputs.size(3) - 1, -1, -1))
             input_img = inputs.to(self.device)
             outputs = self.model_student(input_img)
-            f2 = outputs.data.cpu()
+            f2 = outputs[2].data.cpu()
 
             ff = f1 + f2
             if ff.dim() == 3:
@@ -242,3 +452,17 @@ class Engine:
             save_dir,
             is_best=is_best,
         )
+
+    def weights_init_kaiming(self, m):
+        classname = m.__class__.__name__
+        if classname.find('Linear') != -1:
+            nn.init.kaiming_normal_(m.weight, a=0, mode='fan_out')
+            nn.init.constant_(m.bias, 0.0)
+        elif classname.find('Conv') != -1:
+            nn.init.kaiming_normal_(m.weight, a=0, mode='fan_in')
+            if m.bias is not None:
+                nn.init.constant_(m.bias, 0.0)
+        elif classname.find('BatchNorm') != -1:
+            if m.affine:
+                nn.init.constant_(m.weight, 1.0)
+                nn.init.constant_(m.bias, 0.0)
