@@ -48,19 +48,25 @@ class Engine:
         self.lr = 0.0
         self.device = torch.device("cpu" if args.cpu else "cuda")
 
-        self.train_ce_loss_history = []
-        self.train_ms_loss_history = []
-        self.train_kl_loss_history = []
-        self.train_cos_loss_history = []
-        self.val_ce_loss_history = []
-        self.val_ms_loss_history = []
-        self.val_kl_loss_history = []
-        self.val_cos_loss_history = []
+        self.adapter = nn.Conv2d(96, 384, kernel_size=1, bias=False).to(self.device)
+        self.weights_init_kaiming(self.adapter)
+        self.optimizer.add_param_group({'params': self.adapter.parameters()})
 
         self.proj = nn.Conv1d(self.args.feats_student, self.args.feats_teacher, kernel_size=1, bias=False).to(
             self.device)
         nn.init.kaiming_normal_(self.proj.weight, a=0, mode='fan_in')
         self.optimizer.add_param_group({'params': self.proj.parameters()})
+
+        self.train_ce_loss_history = []
+        self.train_ms_loss_history = []
+        self.train_kl_loss_history = []
+        self.train_l2_loss_history = []
+        self.train_cos_loss_history = []
+        self.val_ce_loss_history = []
+        self.val_ms_loss_history = []
+        self.val_kl_loss_history = []
+        self.val_l2_loss_history = []
+        self.val_cos_loss_history = []
 
         if torch.cuda.is_available():
             self.ckpt.write_log("[INFO] GPU: " + torch.cuda.get_device_name(0))
@@ -93,6 +99,7 @@ class Engine:
         ce_running_loss = 0.0
         ms_running_loss = 0.0
         kl_running_loss = 0.0
+        l2_running_loss = 0.0
         cos_running_loss = 0.0
 
         self.model_student.train()
@@ -104,14 +111,17 @@ class Engine:
             labels = labels.to(self.device)
 
             self.optimizer.zero_grad()
-            logic_student, feature_student, outputs_student, kl_student = self.model_student(inputs)
+            logic_student, feature_student, outputs_student, kl_student, mid_student = self.model_student(inputs)
             self.model_teacher.eval()
             with torch.no_grad():
-                logic_teacher, feature_teacher, outputs_teacher, kl_teacher = self.model_teacher(inputs)
+                logic_teacher, feature_teacher, outputs_teacher, kl_teacher, mid_teacher = self.model_teacher(inputs)
+
 
             outputs_student = self.proj(outputs_student)
+            mid_student = self.adapter(mid_student)
 
-            total_loss, ce_loss, ms_loss, kl_loss, cos_loss= self.loss.compute(logic_student, labels, feature_student, logic_teacher, kl_student, kl_teacher, outputs_student, outputs_teacher)
+            total_loss, ce_loss, ms_loss, kl_loss, l2_loss, cos_loss = self.loss.compute(logic_student, labels, feature_student, logic_teacher, kl_student, kl_teacher, 
+                                                                              mid_student, mid_teacher, outputs_student, outputs_teacher)
 
 
             running_loss += total_loss.item()
@@ -121,6 +131,8 @@ class Engine:
                 ms_running_loss += ms_loss
             if kl_loss is not None:
                 kl_running_loss += kl_loss
+            if l2_loss is not None:
+                l2_running_loss += l2_loss
             if cos_loss is not None:
                 cos_running_loss += cos_loss
 
@@ -148,6 +160,7 @@ class Engine:
         avg_ce = ce_running_loss / len(self.train_loader) if ce_running_loss != 0 else None
         avg_ms = ms_running_loss / len(self.train_loader) if ms_running_loss != 0 else None
         avg_kl = kl_running_loss / len(self.train_loader) if kl_running_loss != 0 else None
+        avg_l2 = l2_running_loss / len(self.train_loader) if l2_running_loss != 0 else None
         avg_cos = cos_running_loss / len(self.train_loader) if cos_running_loss != 0 else None
 
         # checkpoint에 기록
@@ -155,18 +168,21 @@ class Engine:
         self.train_ce_loss_history.append(avg_ce)
         self.train_ms_loss_history.append(avg_ms)
         self.train_kl_loss_history.append(avg_kl)
+        self.train_l2_loss_history.append(avg_l2)
         self.train_cos_loss_history.append(avg_cos)
 
         self.writer.add_scalar('Loss/Train_Total', avg_loss, epoch + 1)
         self.writer.add_scalar('Loss/Train_CE', avg_ce, epoch + 1)
         self.writer.add_scalar('Loss/Train_MS', avg_ms, epoch + 1)
         self.writer.add_scalar('Loss/Train_KL', avg_kl, epoch + 1)
+        self.writer.add_scalar('Loss/Train_L2', avg_l2, epoch + 1)
         self.writer.add_scalar('Loss/Train_COS', avg_cos, epoch + 1)
 
         self._last_train_loss = avg_loss
         self._last_train_ce = avg_ce
         self._last_train_ms = avg_ms
         self._last_train_kl = avg_kl
+        self._last_train_l2 = avg_l2
         self._last_train_cos = avg_cos
 
 
@@ -179,6 +195,7 @@ class Engine:
         ce_running_loss = 0.0
         ms_running_loss = 0.0
         kl_running_loss = 0.0
+        l2_running_loss = 0.0
         cos_running_loss = 0.0
         self.model_student.eval()
         self.model_teacher.eval()
@@ -187,14 +204,15 @@ class Engine:
                 inputs, labels = self._parse_data_for_train(d)
                 inputs = inputs.to(self.device)
                 labels = labels.to(self.device)
-                logic_student, feature_student, outputs_student, kl_student = self.model_student(inputs)
+                logic_student, feature_student, outputs_student, kl_student, mid_student = self.model_student(inputs)
 
-                logic_teacher, feature_teacher, outputs_teacher, kl_teacher = self.model_teacher(inputs)
+                logic_teacher, feature_teacher, outputs_teacher, kl_teacher, mid_teacher = self.model_teacher(inputs)
 
+                mid_student = self.adapter(mid_student)
                 outputs_student = self.proj(outputs_student)
 
-                total_loss, ce_loss, ms_loss, kl_loss, cos_loss = self.loss.compute(logic_student, labels, feature_student,
-                                                                          logic_teacher, kl_student, kl_teacher, outputs_student, outputs_teacher)
+                total_loss, ce_loss, ms_loss, kl_loss, l2_loss, cos_loss = self.loss.compute(logic_student, labels, feature_student, logic_teacher,
+                                                                                   kl_student, kl_teacher, mid_student, mid_teacher, outputs_student, outputs_teacher)
 
                 running_loss += total_loss.item()
                 if ce_loss is not None:
@@ -203,6 +221,8 @@ class Engine:
                     ms_running_loss += ms_loss
                 if kl_loss is not None:
                     kl_running_loss += kl_loss
+                if l2_loss is not None:
+                    l2_running_loss += l2_loss
                 if cos_loss is not None:
                     cos_running_loss += cos_loss
 
@@ -225,12 +245,14 @@ class Engine:
         avg_ce = ce_running_loss / len(self.validation_loader) if ce_running_loss != 0 else None
         avg_ms = ms_running_loss / len(self.validation_loader) if ms_running_loss != 0 else None
         avg_kl = kl_running_loss / len(self.validation_loader) if kl_running_loss != 0 else None
+        avg_l2 = l2_running_loss / len(self.validation_loader) if l2_running_loss != 0 else None
         avg_cos = cos_running_loss / len(self.validation_loader) if cos_running_loss != 0 else None
 
         self.ckpt.validation_loss_history.append(avg_loss)
         self.val_ce_loss_history.append(avg_ce)
         self.val_ms_loss_history.append(avg_ms)
         self.val_kl_loss_history.append(avg_kl)
+        self.val_l2_loss_history.append(avg_l2)
         self.val_cos_loss_history.append(avg_cos)
 
         self.ckpt.plot_losses(
@@ -242,6 +264,8 @@ class Engine:
             self.val_ms_loss_history,  # ms val loss
             self.train_kl_loss_history,  # kl train loss
             self.val_kl_loss_history,  # kl val loss
+            self.train_l2_loss_history,  # l2 train loss
+            self.val_l2_loss_history,  # l2 val loss
             self.train_cos_loss_history,  # cos train loss
             self.val_cos_loss_history,  # cos val loss
         )
@@ -250,6 +274,7 @@ class Engine:
         self.writer.add_scalar('Loss/Val_CE', avg_ce, epoch + 1)
         self.writer.add_scalar('Loss/Val_MS', avg_ms, epoch + 1)
         self.writer.add_scalar('Loss/Val_KL', avg_kl, epoch + 1)
+        self.writer.add_scalar('Loss/Val_L2', avg_l2, epoch + 1)
         self.writer.add_scalar('Loss/Val_COS', avg_cos, epoch + 1)
 
         self.writer.add_scalars('Loss/Total', {
@@ -268,10 +293,14 @@ class Engine:
             'Train': self._last_train_kl,
             'Val': avg_kl
         }, epoch + 1)
+        self.writer.add_scalars('Loss/L2', {
+            'Train': self._last_train_l2,
+            'Val': avg_l2
+        }, epoch + 1)
         self.writer.add_scalars('Loss/COS', {
             'Train': self._last_train_cos,
             'Val': avg_cos
-        }, epoch + 1)
+        }, epoch + 1) 
 
     def test(self):
         epoch = self.scheduler.last_epoch
@@ -451,6 +480,7 @@ class Engine:
             save_dir,
             is_best=is_best,
         )
+
     def weights_init_kaiming(self, m):
         classname = m.__class__.__name__
         if classname.find('Linear') != -1:
