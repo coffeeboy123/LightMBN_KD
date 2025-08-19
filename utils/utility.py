@@ -19,10 +19,11 @@ def _sanitize_filename(name: str) -> str:
     name = re.sub(r'[\\/:*?"<>|]', '_', name)
     return name
 loss_abbr = {
-    'CrossEntropy': 'C',
-    'MSLoss': 'M',
-    'KL_Logic_Loss': 'K',
-    'L2': 'L',
+    'CrossEntropy': 'CE',
+    'MSLoss': 'MS',
+    'KL_Logic_Loss': 'KL',
+    'CosineKDLoss': 'COS',
+    'L2': 'L2'
 }
 
 # 약어 변환 함수
