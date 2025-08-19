@@ -110,8 +110,14 @@ class checkpoint():
         if self.local_dir is not None:
             copyfile(config_path, os.path.join(self.local_dir, self.config_filename))
 
-    def plot_losses(self, train_total, val_total, train_ce, val_ce, train_ms, val_ms, train_kl, val_kl, train_l2, val_l2):
-
+        def plot_losses(self, train_total, val_total, train_ce, val_ce, train_ms, val_ms, train_kl, val_kl, train_cos, val_cos):
+        """
+        총 3개 plot을 저장
+          - Total loss: train/val
+          - CE loss: train/val
+          - MS loss: train/val
+        리스트들은 모두 epoch별 평균값 리스트여야 함.
+        """
         # 1. Total Loss
         fig = plt.figure()
         plt.plot(range(1, len(train_total) + 1), train_total, label='Train Total', color='blue')
@@ -163,6 +169,19 @@ class checkpoint():
             plt.legend()
             plt.grid(True)
             plt.savefig(os.path.join(self.dir, f'{self.args.model_student}_{self.args.data_train}_{self.fold}_kl_loss.png'),
+                        dpi=600)
+            plt.close(fig)
+
+        if any(x is not None for x in train_cos):
+            fig = plt.figure()
+            plt.plot(range(1, len(train_cos) + 1), train_cos, label='Train COS', color='blue')
+            plt.plot(range(1, len(val_cos) + 1), val_cos, label='Val COS', color='orange')
+            plt.title(f'{self.args.model_student} COS Loss')
+            plt.xlabel('Epoch')
+            plt.ylabel('COS Loss')
+            plt.legend()
+            plt.grid(True)
+            plt.savefig(os.path.join(self.dir, f'{self.args.model_student}_{self.args.data_train}_{self.fold}_cos_loss.png'),
                         dpi=600)
             plt.close(fig)
 
