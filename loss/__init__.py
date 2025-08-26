@@ -16,8 +16,6 @@ from loss.multi_similarity_loss import MultiSimilarityLoss
 from loss.focal_loss import FocalLoss
 from loss.osm_caa_loss import OSM_CAA_Loss
 from loss.center_loss import CenterLoss
-from .kd_logic_loss import KLLogicLoss
-from .cos_kd_loss import CosineKDLoss
 
 
 class LossFunction:
@@ -30,9 +28,6 @@ class LossFunction:
         self.loss = []
         ce_value = None
         ms_value = None
-        kl_value = None
-        l2_value = None
-        cos_value = None
         for loss in args.loss.split("+"):
             weight, loss_type = loss.split("*")
             if loss_type == "CrossEntropy":
@@ -61,13 +56,6 @@ class LossFunction:
                 loss_function = CenterLoss(
                     num_classes=args.num_classes, feat_dim=args.feats
                 )
-            elif loss_type == "KL_Logic_Loss":
-                loss_function = KLLogicLoss(temperature=args.kl_temp)
-            elif loss_type == "L2":
-                loss_function = nn.MSELoss()
-            elif loss_type == "CosineKDLoss":
-                # args.loss에 CosineKD 또는 COS_KD 등으로 넣으면 매칭되게 처리
-                loss_function = CosineKDLoss(reduction="mean")
 
             self.loss.append(
                 {"type": loss_type, "weight": float(weight), "function": loss_function}
@@ -78,18 +66,17 @@ class LossFunction:
 
         self.log = torch.Tensor()
 
-    def compute(self, logic_student, labels, feature_student, logic_teacher, 
-                kl_student, kl_teacher, mid_student, mid_teacher, outputs_student=None, outputs_teacher=None):
+    def compute(self, outputs, labels):
         losses = []
 
         for i, l in enumerate(self.loss):
             if l["type"] in ["CrossEntropy"]:
-                if isinstance(logic_student, list):
-                    loss = [l["function"](output, labels) for output in logic_student]
-                elif isinstance(logic_student, torch.Tensor):
-                    loss = [l["function"](logic_student, labels)]
+                if isinstance(outputs[0], list):
+                    loss = [l["function"](output, labels) for output in outputs[0]]
+                elif isinstance(outputs[0], torch.Tensor):
+                    loss = [l["function"](outputs[0], labels)]
                 else:
-                    raise TypeError("Unexpected type: {}".format(type(logic_student)))
+                    raise TypeError("Unexpected type: {}".format(type(outputs[0])))
 
                 loss = sum(loss)
                 effective_loss = l["weight"] * loss
@@ -99,12 +86,12 @@ class LossFunction:
                 self.log[-1, i] += effective_loss.item()
 
             elif l["type"] in ["Triplet", "MSLoss"]:
-                if isinstance(feature_student, list):
-                    loss = [l["function"](output, labels) for output in feature_student]
-                elif isinstance(feature_student, torch.Tensor):
-                    loss = [l["function"](feature_student, labels)]
+                if isinstance(outputs[1], list):
+                    loss = [l["function"](output, labels) for output in outputs[1]]
+                elif isinstance(outputs[1], torch.Tensor):
+                    loss = [l["function"](outputs[1], labels)]
                 else:
-                    raise TypeError("Unexpected type: {}".format(type(feature_student)))
+                    raise TypeError("Unexpected type: {}".format(type(outputs[1])))
                 loss = sum(loss)
                 effective_loss = l["weight"] * loss
                 losses.append(effective_loss)
@@ -139,46 +126,17 @@ class LossFunction:
                 losses.append(effective_loss)
                 self.log[-1, i] += effective_loss.item()
 
-            elif l["type"] == "KL_Logic_Loss":
-                if logic_student is None or logic_teacher is None:
-                    raise ValueError("KL_Logic_Loss requires both logic_student and logic_teacher")
-
-                loss = l["function"](kl_student, kl_teacher)
-
-                effective_loss = l["weight"] * loss
-                losses.append(effective_loss)
-                self.log[-1, i] += effective_loss.item()
-                kl_value = effective_loss.item()
-
-            elif l["type"] == "L2":
-                # 보통 KD 로짓 쌍(학생/티처)을 L2로 맞춥니다.
-                if kl_student is None or kl_teacher is None:
-                    raise ValueError("L2 loss requires both kl_student and kl_teacher")
-                loss = l["function"](mid_student, mid_teacher)
-                effective_loss = l["weight"] * loss
-                losses.append(effective_loss)
-                self.log[-1, i] += effective_loss.item()
-                l2_value = effective_loss.item()
-
-            elif l["type"] == "CosineKDLoss":
-                if outputs_student is None or outputs_teacher is None:
-                    raise ValueError("CosineKD needs outputs_student & outputs_teacher")
-                loss = l["function"](outputs_student, outputs_teacher)
-                effective_loss = l["weight"] * loss
-                losses.append(effective_loss)
-                cos_value = effective_loss.item()
-                self.log[-1, i] += effective_loss.item()
-
             else:
                 pass
 
         loss_sum = sum(losses)
 
 
+
         if len(self.loss) > 1:
             self.log[-1, -1] += loss_sum.item()
 
-        return loss_sum, ce_value, ms_value, kl_value, l2_value, cos_value
+        return loss_sum, ce_value, ms_value
 
     def start_log(self):
         self.log = torch.cat((self.log, torch.zeros(1, len(self.loss))))

@@ -7,7 +7,7 @@ from .warmup_cosine_scheduler import WarmupCosineAnnealingLR
 
 def make_optimizer(args, model):
     trainable = filter(lambda x: x.requires_grad, model.parameters())
-    if args.model_student in ['PCB', 'PCB_v', 'PCB_conv']:
+    if args.model in ['PCB', 'PCB_v', 'PCB_conv']:
         ignored_params = []
         for i in range(args.parts):
             name = 'classifier' + str(i)

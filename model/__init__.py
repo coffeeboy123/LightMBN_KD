@@ -21,36 +21,6 @@ def make_model(args, ckpt):
 
     return model
 
-def make_model_student(args, ckpt):
-
-    ckpt.write_log('[INFO] Building {} model...'.format(args.model_student))
-
-    device = torch.device('cpu' if args.cpu else 'cuda')
-    # nGPU = args.nGPU
-
-    module = import_module('model.' + args.model_student.lower())
-    model = getattr(module, args.model_student)(args).to(device)
-
-    if not args.cpu and args.nGPU > 1:
-        model = nn.DataParallel(model, range(args.nGPU))
-
-    return model
-
-def make_model_teacher(args, ckpt):
-
-    ckpt.write_log('[INFO] Building {} model...'.format(args.model_teacher))
-
-    device = torch.device('cpu' if args.cpu else 'cuda')
-    # nGPU = args.nGPU
-
-    module = import_module('model.' + args.model_teacher.lower())
-    model = getattr(module, args.model_teacher)(args).to(device)
-
-    if not args.cpu and args.nGPU > 1:
-        model = nn.DataParallel(model, range(args.nGPU))
-
-    return model
-
 # class Model(nn.Module):
 
 #     def __init__(self, args, ckpt):

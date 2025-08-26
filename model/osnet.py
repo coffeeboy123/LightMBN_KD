@@ -8,7 +8,6 @@ from torch import nn
 from torch.nn import functional as F
 import torchvision
 
-
 pretrained_urls = {
     'osnet_x1_0': 'https://drive.google.com/uc?id=1LaG1EJpHrxdAxKnSCJ_i0u-nbxSAeiFY',
     'osnet_x0_75': 'https://drive.google.com/uc?id=1uwA9fElHOk3ZogwbeY5GkLI6QPTX70Hq',
@@ -32,7 +31,7 @@ class ConvLayer(nn.Module):
             self.bn = nn.InstanceNorm2d(out_channels, affine=True)
         else:
             self.bn = nn.BatchNorm2d(out_channels)
-        self.relu = nn.ReLU(inplace=True)
+        self.relu = nn.ReLU(inplace=False)
 
     def forward(self, x):
         x = self.conv(x)
@@ -49,7 +48,7 @@ class Conv1x1(nn.Module):
         self.conv = nn.Conv2d(in_channels, out_channels, 1, stride=stride, padding=0,
                               bias=False, groups=groups)
         self.bn = nn.BatchNorm2d(out_channels)
-        self.relu = nn.ReLU(inplace=True)
+        self.relu = nn.ReLU(inplace=False)
 
     def forward(self, x):
         x = self.conv(x)
@@ -80,7 +79,7 @@ class Conv3x3(nn.Module):
         self.conv = nn.Conv2d(in_channels, out_channels, 3, stride=stride, padding=1,
                               bias=False, groups=groups)
         self.bn = nn.BatchNorm2d(out_channels)
-        self.relu = nn.ReLU(inplace=True)
+        self.relu = nn.ReLU(inplace=False)
 
     def forward(self, x):
         x = self.conv(x)
@@ -99,7 +98,7 @@ class LightConv3x3(nn.Module):
         self.conv1 = nn.Conv2d(in_channels, out_channels, 1, stride=1, padding=0, bias=False)
         self.conv2 = nn.Conv2d(out_channels, out_channels, 3, stride=1, padding=1, bias=False, groups=out_channels)
         self.bn = nn.BatchNorm2d(out_channels)
-        self.relu = nn.ReLU(inplace=True)
+        self.relu = nn.ReLU(inplace=False)
 
     def forward(self, x):
         x = self.conv1(x)
@@ -107,8 +106,6 @@ class LightConv3x3(nn.Module):
         x = self.bn(x)
         x = self.relu(x)
         return x
-
-
 
 
 ##########
@@ -124,16 +121,16 @@ class ChannelGate(nn.Module):
             num_gates = in_channels
         self.return_gates = return_gates
         self.global_avgpool = nn.AdaptiveAvgPool2d(1)
-        self.fc1 = nn.Conv2d(in_channels, in_channels//reduction, kernel_size=1, bias=True, padding=0)
+        self.fc1 = nn.Conv2d(in_channels, in_channels // reduction, kernel_size=1, bias=True, padding=0)
         self.norm1 = None
         if layer_norm:
-            self.norm1 = nn.LayerNorm((in_channels//reduction, 1, 1))
-        self.relu = nn.ReLU(inplace=True)
-        self.fc2 = nn.Conv2d(in_channels//reduction, num_gates, kernel_size=1, bias=True, padding=0)
+            self.norm1 = nn.LayerNorm((in_channels // reduction, 1, 1))
+        self.relu = nn.ReLU(inplace=False)
+        self.fc2 = nn.Conv2d(in_channels // reduction, num_gates, kernel_size=1, bias=True, padding=0)
         if gate_activation == 'sigmoid':
             self.gate_activation = nn.Sigmoid()
         elif gate_activation == 'relu':
-            self.gate_activation = nn.ReLU(inplace=True)
+            self.gate_activation = nn.ReLU(inplace=False)
         elif gate_activation == 'linear':
             self.gate_activation = None
         else:
@@ -151,7 +148,15 @@ class ChannelGate(nn.Module):
             x = self.gate_activation(x)
         if self.return_gates:
             return x
-        return input * x
+        if input.dtype == torch.quint8:
+            scale = input.q_scale()
+            zero_point = input.q_zero_point()
+            # x가 quantized 상태가 아니라면 동일 파라미터로 quantize
+            if not x.is_quantized:
+                x = torch.quantize_per_tensor(x, scale, zero_point, input.dtype)
+            return torch.ops.quantized.mul(input, x, scale, zero_point)
+        else:
+            return input * x
 
 
 class OSBlock(nn.Module):
@@ -189,15 +194,39 @@ class OSBlock(nn.Module):
     def forward(self, x):
         identity = x
         x1 = self.conv1(x)
+        # 각 경로별 연산
         x2a = self.conv2a(x1)
         x2b = self.conv2b(x1)
         x2c = self.conv2c(x1)
         x2d = self.conv2d(x1)
-        x2 = self.gate(x2a) + self.gate(x2b) + self.gate(x2c) + self.gate(x2d)
+
+        # 각 경로에 대해 게이트 적용
+        gate1 = self.gate(x2a)
+        gate2 = self.gate(x2b)
+        gate3 = self.gate(x2c)
+        gate4 = self.gate(x2d)
+
+        # quantized 상태라면 torch.ops.quantized.add()를 사용하여 덧셈 수행.
+        if gate1.dtype == torch.quint8:
+            scale = gate1.q_scale()
+            zero_point = gate1.q_zero_point()
+            # 두 텐서를 덧셈: 먼저 gate1과 gate2를 더하고, 그 결과에 gate3, gate4를 순차적으로 더함.
+            temp = torch.ops.quantized.add(gate1, gate2, scale, zero_point)
+            temp = torch.ops.quantized.add(temp, gate3, scale, zero_point)
+            gate_sum = torch.ops.quantized.add(temp, gate4, scale, zero_point)
+        else:
+            gate_sum = gate1 + gate2 + gate3 + gate4
+
+        x2 = gate_sum
         x3 = self.conv3(x2)
         if self.downsample is not None:
             identity = self.downsample(identity)
-        out = x3 + identity
+        if x3.dtype == torch.quint8:
+            scale = x3.q_scale()
+            zero_point = x3.q_zero_point()
+            out = torch.ops.quantized.add(x3, identity, scale, zero_point)
+        else:
+            out = x3 + identity
         if self.IN is not None:
             out = self.IN(out)
         return F.relu(out)
@@ -253,7 +282,7 @@ class OSNet(nn.Module):
         return nn.Sequential(*layers)
 
     def _construct_fc_layer(self, fc_dims, input_dim, dropout_p=None):
-        if fc_dims is None or fc_dims<0:
+        if fc_dims is None or fc_dims < 0:
             self.feature_dim = input_dim
             return None
 
@@ -264,7 +293,7 @@ class OSNet(nn.Module):
         for dim in fc_dims:
             layers.append(nn.Linear(input_dim, dim))
             layers.append(nn.BatchNorm1d(dim))
-            layers.append(nn.ReLU(inplace=True))
+            layers.append(nn.ReLU(inplace=False))
             if dropout_p is not None:
                 layers.append(nn.Dropout(p=dropout_p))
             input_dim = dim
@@ -364,7 +393,7 @@ def init_pretrained_weights(model, key=''):
 
     for k, v in state_dict.items():
         if k.startswith('module.'):
-            k = k[7:] # discard module.
+            k = k[7:]  # discard module.
 
         if k in model_dict and model_dict[k].size() == v.size():
             new_state_dict[k] = v
@@ -373,7 +402,7 @@ def init_pretrained_weights(model, key=''):
             discarded_layers.append(k)
 
     model_dict.update(new_state_dict)
-    model.load_state_dict(model_dict)
+    model.load_state_dict(model_dict, strict=False)
 
     if len(matched_layers) == 0:
         warnings.warn(
@@ -396,6 +425,7 @@ def osnet_x1_25(num_classes=1000, pretrained=True, loss='softmax', **kwargs):
                  channels=[80, 320, 480, 640], loss=loss, **kwargs)
     if pretrained:
         init_pretrained_weights(model, key='osnet_x1_25')
+
 
 def osnet_x1_0(num_classes=1000, pretrained=True, loss='softmax', **kwargs):
     # standard size (width x1.0)
