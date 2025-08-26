@@ -29,6 +29,13 @@ if __name__ == '__main__':
     ckpt = utility.checkpoint(args)
     loader = data_v2.ImageDataManager(args)
     model = make_model(args, ckpt)
+
+    ckpt.write_log(
+        "[INFO] Model parameters: {com[0]} flops: {com[1]}".format(
+            com=compute_model_complexity(model, (1, 3, args.height, args.width))
+        )
+    )
+
     model.qconfig = torch.quantization.get_default_qat_qconfig("qnnpack")
     model = torch.quantization.prepare_qat(model, inplace=True)
 
@@ -51,11 +58,6 @@ if __name__ == '__main__':
     scheduler = make_scheduler(args, optimzer, start)
 
     # print('[INFO] System infomation: \n {}'.format(get_pretty_env_info()))
-    ckpt.write_log(
-        "[INFO] Model parameters: {com[0]} flops: {com[1]}".format(
-            com=compute_model_complexity(model, (1, 3, args.height, args.width))
-        )
-    )
 
     engine = engine_v3.Engine(args, model, optimzer, scheduler, loss, loader, ckpt)
     # engine = engine.Engine(args, model, loss, loader, ckpt)

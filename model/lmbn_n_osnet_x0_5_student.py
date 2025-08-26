@@ -7,7 +7,7 @@ from .bnneck import BNNeck_qat, BNNeck3_qat
 from torch.nn import functional as F
 
 from torch.autograd import Variable
-from .partweightgate import PartWeightGate_256
+
 
 class LMBN_n_osnet_x0_5_student(nn.Module):
     def __init__(self, args):
@@ -16,8 +16,6 @@ class LMBN_n_osnet_x0_5_student(nn.Module):
         self.quant = torch.quantization.QuantStub()  # 양자화 적용
         self.dequant = torch.quantization.DeQuantStub()  # 양자화 해제
 
-        self.part_gate = PartWeightGate_256()
-        self.part_gate.apply(self.weights_init_kaiming)
 
         osnet = osnet_x0_5(pretrained=True)
 
@@ -128,13 +126,6 @@ class LMBN_n_osnet_x0_5_student(nn.Module):
         p_head = F.adaptive_avg_pool2d(p_head, (1, 1))
         p_upper = F.adaptive_avg_pool2d(p_upper, (1, 1))
         p_lower = F.adaptive_avg_pool2d(p_lower, (1, 1))
-
-        weights = self.part_gate(p_head, p_upper, p_lower)
-
-        p_head = p_head * weights[:, 0:1, :, :]
-        p_upper = p_upper * weights[:, 1:2, :, :]
-        p_lower = p_lower * weights[:, 2:3, :, :]
-
 
         f_glo = self.reduction_0(glo)
         f_glo = self.dequantize_if_needed(f_glo)
