@@ -39,7 +39,7 @@ class LMBN_n_osnet_x0_5_student(nn.Module):
         self.channel_branch = nn.Sequential(copy.deepcopy(
             conv3), copy.deepcopy(osnet.conv4), copy.deepcopy(osnet.conv5))
 
-        self.global_pooling = nn.AdaptiveMaxPool2d((1, 1))
+        self.global_pooling = nn.MaxPool2d(kernel_size=(24, 8))
         self.partial_pooling = nn.AdaptiveAvgPool2d((12, 1))
         self.channel_pooling = nn.AdaptiveAvgPool2d((1, 2))
         self.average_pooling = nn.AdaptiveAvgPool2d((1, 1))

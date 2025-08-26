@@ -36,6 +36,9 @@ class PartWeightGate_256(nn.Module):
         w_lower = self.fc(x_lower)
 
         weights = torch.cat([w_head, w_upper, w_lower], dim=1)  # (B, 3, 1, 1)
-        weights = F.softmax(weights, dim=1)  # Normalize across parts
+
+        # sigmoid + 정규화 (QAT friendly)
+        weights = torch.sigmoid(weights)
+        weights = weights / (weights.sum(dim=1, keepdim=True) + 1e-6)
 
         return weights  # shape: (B, 3, 1, 1)
