@@ -14,23 +14,35 @@ def attach_rounding_eps_shift(model: nn.Module, activation_only: bool = True):
     handles = []
     num = 0
 
-    def _pre_hook(mod: FakeQuantize, inputs):
-        x = inputs[0]
-        # eps를 (-0.5, 0.5) 안에 유지 (안정)
-        e = torch.tanh(mod.eps) * 0.5
+    def _pre_hook(mod, args):
+        (x,) = args
 
-        # scale은 per-tensor(스칼라)거나 per-channel(텐서)일 수 있음
-        s = mod.scale
-        if s is None:
-            return inputs  # 아직 observer가 scale 못 만들었으면 패스
+        # 1) 안전한 scale: detach + device 맞추기
+        ap = getattr(mod, "activation_post_process", None)
+        if ap is None or not hasattr(ap, "scale"):
+            return (x, )
 
-        # 브로드캐스트 처리(대부분 activation은 per-tensor라 그냥 곱해짐)
-        try:
-            shift = e * s
-            return (x + shift, )
-        except RuntimeError:
-            # per-channel weight 같은 특수 케이스 대비(필요시 확장)
-            return (x + e * s.view(1, -1, 1, 1), )
+        s = ap.scale
+        # s: per-tensor([]) 혹은 per-channel([C]) 텐서
+        s_safe = s.detach().to(x.device)  # ← 버전 고정본
+
+        # 2) epsilon도 in-place 금지: 파생 텐서로 사용
+        e = getattr(mod, "rounding_eps", None)
+        if e is None:
+            return (x, )
+
+        # 부드럽고 유한한 경계: tanh 로 -0.49~0.49 범위
+        e_eff = 0.49 * torch.tanh(e)      # ← 새 텐서, in-place 없음
+
+        # 3) shape broadcast (per-tensor vs per-channel)
+        if s_safe.dim() == 0:
+            shift = e_eff * s_safe        # scalar
+        else:
+            # per-channel fake-quant (C,) → (1,C,1,1)로 맞춤
+            shift = e_eff * s_safe.view(1, -1, 1, 1)
+
+    # 4) x는 절대 in-place 금지 (x += ... X)
+        return (x + shift, )
 
     for name, m in model.named_modules():
         if isinstance(m, FakeQuantize):
