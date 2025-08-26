@@ -12,6 +12,7 @@ from option import args
 import utils.utility as utility
 from utils.model_complexity import compute_model_complexity
 from torch.utils.collect_env import get_pretty_env_info
+from model.qat_eps_shift import attach_rounding_eps_shift
 import yaml
 import torch
 
@@ -30,6 +31,10 @@ if __name__ == '__main__':
     model = make_model(args, ckpt)
     model.qconfig = torch.quantization.get_default_qat_qconfig("qnnpack")
     model = torch.quantization.prepare_qat(model, inplace=True)
+
+    handles, n = attach_rounding_eps_shift(model, activation_only=True)
+    print(f"[QAT] Eps-shift hooks attached to {n} FakeQuantize modules.")
+
     optimzer = make_optimizer(args, model)
     loss = make_loss(args, ckpt) if not args.test_only else None
 

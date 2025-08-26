@@ -45,7 +45,7 @@ class checkpoint():
             self.fold = 'A'
 
         exp_folder = f"{args.model}_{args.data_train}_{self.fold}_{args.batchid}_{args.batchimage}_{args.lr}_{args.batchtest}_{args.epochs}"
-        self.dir = os.path.join('/content/gdrive/MyDrive/SAVE_QAT', exp_folder)
+        self.dir = os.path.join('/content/gdrive/MyDrive/SAVE_VAL_QAT', exp_folder)
         _make_dir(self.dir)
 
 
