@@ -2,12 +2,11 @@ import copy
 import torch
 from torch import nn
 from .osnet import osnet_x0_5, OSBlock
-from .attention import BatchDrop, PAM_Module, CAM_Module, SE_Module, Dual_Module, BatchFeatureErase_Top_Bottom_Element_256
+from .attention import BatchDrop, PAM_Module, CAM_Module, SE_Module, Dual_Module, BatchFeatureErase_Top_osnet_x0_5
 from .bnneck import BNNeck_qat, BNNeck3_qat
 from torch.nn import functional as F
 
 from torch.autograd import Variable
-
 
 class LMBN_n_osnet_x0_5_student(nn.Module):
     def __init__(self, args):
@@ -51,8 +50,7 @@ class LMBN_n_osnet_x0_5_student(nn.Module):
         self.reduction_3 = copy.deepcopy(reduction)
         self.reduction_4 = copy.deepcopy(reduction)
         self.reduction_5 = copy.deepcopy(reduction)
-        self.reduction_6 = copy.deepcopy(reduction)
-        self.reduction_7 = copy.deepcopy(reduction)
+
 
         self.no_shared_1 = nn.Sequential(nn.Conv2d(
             args.feats, args.feats, 1, bias=False), nn.BatchNorm2d(args.feats), nn.ReLU(True))
@@ -73,7 +71,7 @@ class LMBN_n_osnet_x0_5_student(nn.Module):
         # print('Using batch drop block.')
         # self.batch_drop_block = BatchDrop(
         #     h_ratio=args.h_ratio, w_ratio=args.w_ratio)
-        self.batch_drop_block = BatchFeatureErase_Top_Bottom_Element_256(args.feats, OSBlock)
+        self.batch_drop_block = BatchFeatureErase_Top_osnet_x0_5(args.feats, OSBlock)
 
         self.activation_map = args.activation_map
 
@@ -97,7 +95,7 @@ class LMBN_n_osnet_x0_5_student(nn.Module):
             glo_ = glo
 
         if self.batch_drop_block is not None:
-            glo_drop, glo_bottom, glo_element, glo = self.batch_drop_block(glo)
+            glo_drop, glo = self.batch_drop_block(glo)
 
         if self.activation_map:
 
@@ -111,8 +109,6 @@ class LMBN_n_osnet_x0_5_student(nn.Module):
 
             return glo, glo_, fmap_c0, fmap_c1, fmap_p0, fmap_p1
 
-        glo_element = self.average_pooling(glo_element)
-        glo_bottom = self.average_pooling(glo_bottom)
         glo_drop = self.global_pooling(glo_drop)
         glo = self.average_pooling(glo)  # shape:(batchsize, 512,1,1)
         g_par = self.global_pooling(par)  # shape:(batchsize, 512,1,1)
@@ -145,12 +141,6 @@ class LMBN_n_osnet_x0_5_student(nn.Module):
         f_glo_drop = self.reduction_5(glo_drop)
         f_glo_drop = self.dequantize_if_needed(f_glo_drop)
 
-        f_glo_bottom = self.reduction_6(glo_bottom)
-        f_glo_bottom = self.dequantize_if_needed(f_glo_bottom)
-
-        f_glo_element = self.reduction_7(glo_element)
-        f_glo_element = self.dequantize_if_needed(f_glo_element)
-
         ################
 
         c0 = cha[:, :, :, 0:1]
@@ -167,7 +157,7 @@ class LMBN_n_osnet_x0_5_student(nn.Module):
         fea = [f_glo[-1], f_glo_drop[-1], f_p0[-1]]
 
 
-        return [f_glo_element[1], f_glo_bottom[1], f_glo[1], f_glo_drop[1], f_p0[1], f_p1[1], f_p2[1], f_p3[1], f_c0[1], f_c1[1]], fea, torch.stack([f_glo[0], f_glo_drop[0], f_p0[0], f_p1[0], f_p2[0], f_p3[0], f_c0[0], f_c1[0]], dim=2)
+        return [f_glo[1], f_glo_drop[1], f_p0[1], f_p1[1], f_p2[1], f_p3[1], f_c0[1], f_c1[1]], fea, torch.stack([f_glo[0], f_glo_drop[0], f_p0[0], f_p1[0], f_p2[0], f_p3[0], f_c0[0], f_c1[0]], dim=2)
 
     def weights_init_kaiming(self, m):
         classname = m.__class__.__name__
