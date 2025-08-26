@@ -38,6 +38,7 @@ if __name__ == '__main__':
 
     model.qconfig = torch.quantization.get_default_qat_qconfig("qnnpack")
     model = torch.quantization.prepare_qat(model, inplace=True)
+    
 
     handles, n = attach_rounding_eps_shift(model, activation_only=True)
     print(f"[QAT] Eps-shift hooks attached to {n} FakeQuantize modules.")

@@ -53,6 +53,7 @@ class Engine:
 
         self.lr = 0.0
         self.device = torch.device("cpu" if args.cpu else "cuda")
+        self.model.to(self.device)  
 
         self.train_ce_loss_history = []
         self.train_ms_loss_history = []
