@@ -27,7 +27,7 @@ def attach_rounding_eps_shift(model: nn.Module, activation_only: bool = True):
         s_safe = s.detach().to(x.device)  # ← 버전 고정본
 
         # 2) epsilon도 in-place 금지: 파생 텐서로 사용
-        e = getattr(mod, "rounding_eps", None)
+        e = getattr(mod, "eps", None)
         if e is None:
             return (x, )
 
