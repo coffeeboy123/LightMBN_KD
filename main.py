@@ -40,7 +40,7 @@ if __name__ == '__main__':
     model = torch.quantization.prepare_qat(model, inplace=True)
     
 
-    handles, n = attach_rounding_eps_shift(model, activation_only=True)
+    handles, n = attach_rounding_eps_shift(model, activation_only=False)
     print(f"[QAT] Eps-shift hooks attached to {n} FakeQuantize modules.")
 
     optimzer = make_optimizer(args, model)
