@@ -70,7 +70,7 @@ if __name__ == '__main__':
         engine.validation()
         
         # 🔽 100 에폭 이후부터 매 에폭마다 테스트
-        if n >= 200:
+        if n >= 100:
             if args.test_every != 0 and n % args.test_every == 0:
                 engine.test()
             elif n == args.epochs:
