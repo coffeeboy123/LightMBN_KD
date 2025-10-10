@@ -66,7 +66,7 @@ class checkpoint():
         tag_loss = shorten_loss_name(tag_loss)  # 약어 변환
         safe_loss = _sanitize_filename(tag_loss)
 
-        exp_folder = f"{args.model}_{args.data_train}_{self.fold}_{args.batchid}_{args.batchimage}_{args.lr}_{args.batchtest}_{args.epochs}"
+        exp_folder = f"{args.model_student}_{args.model_teacher}_{args.kl_temp}_{safe_loss}_{args.data_train}_{self.fold}_{args.epochs}"
         self.dir = os.path.join('/content/gdrive/MyDrive/SAVE_VAL_KD', exp_folder)
         _make_dir(self.dir)
 
