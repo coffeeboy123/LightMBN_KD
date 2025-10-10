@@ -37,8 +37,13 @@ parser.add_argument('--sampler', type=str, default='True',
                     help='do use sampler in dataloader')
 
 
-parser.add_argument('--model', default='LMBN_n_osnet_x0_5_student', help='model name')
-parser.add_argument('--loss', type=str, default='0.5*CrossEntropy+0.5*MSLoss',
+parser.add_argument('--model_student', default='LMBN_n_osnet_x0_25_student', help='model name')
+parser.add_argument('--model_teacher', default='LMBN_n_fusion_3', help='model name')
+parser.add_argument('--teacher_pretrain', type=str, default='C:/Users/Howon_LEE/Downloads/LMBN_n_fusion_3_SYSU_A_6_2_0.0006_12_300_model-best.pth', help='teacher model checkpoint path')
+parser.add_argument('--kl_temp', type=float, default=2.0, help='Temperature for logic KL')
+
+
+parser.add_argument('--loss', type=str, default='0.25*CrossEntropy+0.5*MSLoss+0.25*KL_Logic_Loss',
                     help='loss function configuration')
 parser.add_argument("--if_labelsmooth", action='store_true',
                     help='Label Smoothing Trick')
@@ -57,7 +62,9 @@ parser.add_argument("--h_ratio", type=float, default=0.3,
 parser.add_argument('--act', type=str, default='relu',
                     help='activation function')
 parser.add_argument('--pool', type=str, default='avg', help='pool function')
-parser.add_argument('--feats', type=int, default=256,
+parser.add_argument('--feats_teacher', type=int, default=512,
+                    help='number of feature maps')
+parser.add_argument('--feats_student', type=int, default=128,
                     help='number of feature maps')
 parser.add_argument('--height', type=int, default=384,
                     help='height of the input image')

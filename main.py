@@ -1,7 +1,7 @@
 import data_v1
 import data_v2
 from loss import make_loss
-from model import make_model
+from model import make_model_student, make_model_teacher
 from optim import make_optimizer, make_scheduler
 
 # import engine_v1
@@ -12,7 +12,6 @@ from option import args
 import utils.utility as utility
 from utils.model_complexity import compute_model_complexity
 from torch.utils.collect_env import get_pretty_env_info
-from model.qat_eps_shift import attach_rounding_eps_shift
 import yaml
 import torch
 
@@ -28,39 +27,32 @@ if __name__ == '__main__':
     # loader = data.Data(args)
     ckpt = utility.checkpoint(args)
     loader = data_v2.ImageDataManager(args)
-    model = make_model(args, ckpt)
-
-    ckpt.write_log(
-        "[INFO] Model parameters: {com[0]} flops: {com[1]}".format(
-            com=compute_model_complexity(model, (1, 3, args.height, args.width))
-        )
-    )
-
-    model.qconfig = torch.quantization.get_default_qat_qconfig("qnnpack")
-    model = torch.quantization.prepare_qat(model, inplace=True)
-    
-
-    handles, n = attach_rounding_eps_shift(model, activation_only=False)
-    print(f"[QAT] Eps-shift hooks attached to {n} FakeQuantize modules.")
-
-    optimzer = make_optimizer(args, model)
+    model_student = make_model_student(args, ckpt)
+    model_teacher = make_model_teacher(args, ckpt)
+    optimzer = make_optimizer(args, model_student)
     loss = make_loss(args, ckpt) if not args.test_only else None
+
+    if args.teacher_pretrain != "":
+        ckpt.load_pretrained_weights(model_teacher, args.teacher_pretrain)
 
 
     start = -1
     if args.load != "":
         start, model, optimizer = ckpt.resume_from_checkpoint(
-            osp.join(ckpt.dir, "model-latest.pth"), model, optimzer
+            osp.join(ckpt.dir, "model-latest.pth"), model_student, optimzer
         )
         start = start - 1
-    if args.pre_train != "":
-        ckpt.load_pretrained_weights(model, args.pre_train)
 
     scheduler = make_scheduler(args, optimzer, start)
 
     # print('[INFO] System infomation: \n {}'.format(get_pretty_env_info()))
+    ckpt.write_log(
+        "[INFO] Model parameters: {com[0]} flops: {com[1]}".format(
+            com=compute_model_complexity(model_student, (1, 3, args.height, args.width))
+        )
+    )
 
-    engine = engine_v3.Engine(args, model, optimzer, scheduler, loss, loader, ckpt)
+    engine = engine_v3.Engine(args, model_student, model_teacher, optimzer, scheduler, loss, loader, ckpt)
     # engine = engine.Engine(args, model, loss, loader, ckpt)
 
     n = start + 1
@@ -68,11 +60,8 @@ if __name__ == '__main__':
         n += 1
         engine.train()
         engine.validation()
-        
-        # 🔽 100 에폭 이후부터 매 에폭마다 테스트
-        if n >= 100:
-            if args.test_every != 0 and n % args.test_every == 0:
-                engine.test()
-            elif n == args.epochs:
-                engine.test()
+        if args.test_every != 0 and n % args.test_every == 0:
+            engine.test()
+        elif n == args.epochs:
+            engine.test()
     engine.close()

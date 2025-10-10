@@ -21,8 +21,8 @@ class PartWeightGate(nn.Module):
 
         return weights  # shape: (B, 3, 1, 1)
 
-class PartWeightGate_256(nn.Module):
-    def __init__(self, in_dim=256):
+class PartWeightGate_student(nn.Module):
+    def __init__(self, in_dim=128):
         super().__init__()
         self.fc = nn.Sequential(
             nn.Conv2d(in_dim, in_dim // 4, 1),
@@ -36,9 +36,27 @@ class PartWeightGate_256(nn.Module):
         w_lower = self.fc(x_lower)
 
         weights = torch.cat([w_head, w_upper, w_lower], dim=1)  # (B, 3, 1, 1)
-
-        # sigmoid + 정규화 (QAT friendly)
-        weights = torch.sigmoid(weights)
-        weights = weights / (weights.sum(dim=1, keepdim=True) + 1e-6)
+        weights = F.softmax(weights, dim=1)  # Normalize across parts
 
         return weights  # shape: (B, 3, 1, 1)
+
+
+
+
+class ChannelWeightGate(nn.Module):
+    def __init__(self, in_dim=512):
+        super().__init__()
+        self.fc = nn.Sequential(
+            nn.Conv2d(in_dim, in_dim // 4, 1),
+            nn.ReLU(),
+            nn.Conv2d(in_dim // 4, 1, 1)  # Scalar importance per part
+        )
+
+    def forward(self, l_ch, r_ch):
+        w_l_ch = self.fc(l_ch)  # (B, 1, 1, 1)
+        w_r_ch = self.fc(r_ch)
+
+        weights = torch.cat([w_l_ch, w_r_ch], dim=1)  # (B, 2, 1, 1)
+        weights = F.softmax(weights, dim=1)  # Normalize across parts
+
+        return weights  # shape: (B, 2, 1, 1)

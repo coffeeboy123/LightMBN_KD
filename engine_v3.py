@@ -3,20 +3,12 @@ import numpy as np
 import torch
 from utils.functions import evaluation
 from utils.re_ranking import re_ranking, re_ranking_gpu
-import os
-import copy
-
 
 try:
     import wandb
 except ImportError:
     wandb = None
 
-def print_model_size(model, model_name="Model"):
-    torch.save(model.state_dict(), "temp.pth")
-    size_mb = os.path.getsize("temp.pth") / 1e6
-    print(f"{model_name} size: {size_mb:.2f} MB")
-    os.remove("temp.pth")
 
 def set_seed(seed: int):
     """실험 재현성을 위한 시드 고정"""
@@ -31,7 +23,7 @@ def set_seed(seed: int):
 
 
 class Engine:
-    def __init__(self, args, model, optimizer, scheduler, loss, loader, ckpt):
+    def __init__(self, args, model_student, model_teacher, optimizer, scheduler, loss, loader, ckpt):
         # ─── 재현성: 시드 고정 ────────────────────────────────
         if hasattr(args, 'seed'):
             set_seed(args.seed)
@@ -46,19 +38,23 @@ class Engine:
         self.queryset = loader.queryset
 
         self.ckpt = ckpt
-        self.model = model
+        self.model_student = model_student
+        self.model_teacher = model_teacher
         self.optimizer = optimizer
         self.scheduler = scheduler
         self.loss = loss
 
         self.lr = 0.0
         self.device = torch.device("cpu" if args.cpu else "cuda")
-        self.model.to(self.device)  
+        self.model_student.to(self.device)
+        self.model_teacher.to(self.device)
 
         self.train_ce_loss_history = []
         self.train_ms_loss_history = []
+        self.train_kl_loss_history = []
         self.val_ce_loss_history = []
         self.val_ms_loss_history = []
+        self.val_kl_loss_history = []
 
         if torch.cuda.is_available():
             self.ckpt.write_log("[INFO] GPU: " + torch.cuda.get_device_name(0))
@@ -86,11 +82,13 @@ class Engine:
             )
             self.lr = lr
         self.loss.start_log()
+
         running_loss = 0.0
         ce_running_loss = 0.0
         ms_running_loss = 0.0
+        kl_running_loss = 0.0
 
-        self.model.train()
+        self.model_student.train()
 
         for batch, d in enumerate(self.train_loader):
             inputs, labels = self._parse_data_for_train(d)
@@ -99,14 +97,23 @@ class Engine:
             labels = labels.to(self.device)
 
             self.optimizer.zero_grad()
-            outputs = self.model(inputs)
-            total_loss, ce_loss, ms_loss = self.loss.compute(outputs, labels)
+            outputs_student = self.model_student(inputs)
+            self.model_teacher.eval()
+            with torch.no_grad():
+                outputs_teacher = self.model_teacher(inputs)
+
+
+
+            total_loss, ce_loss, ms_loss, kl_loss= self.loss.compute(outputs_student, outputs_teacher, labels)
+
 
             running_loss += total_loss.item()
             if ce_loss is not None:
                 ce_running_loss += ce_loss
             if ms_loss is not None:
                 ms_running_loss += ms_loss
+            if kl_loss is not None:
+                kl_running_loss += kl_loss
 
             total_loss.backward()
             self.optimizer.step()
@@ -131,19 +138,23 @@ class Engine:
         avg_loss = running_loss / len(self.train_loader)
         avg_ce = ce_running_loss / len(self.train_loader) if ce_running_loss != 0 else None
         avg_ms = ms_running_loss / len(self.train_loader) if ms_running_loss != 0 else None
+        avg_kl = kl_running_loss / len(self.train_loader) if kl_running_loss != 0 else None
 
         # checkpoint에 기록
         self.ckpt.loss_history.append(avg_loss)
         self.train_ce_loss_history.append(avg_ce)
         self.train_ms_loss_history.append(avg_ms)
+        self.train_kl_loss_history.append(avg_kl)
 
         self.writer.add_scalar('Loss/Train_Total', avg_loss, epoch + 1)
         self.writer.add_scalar('Loss/Train_CE', avg_ce, epoch + 1)
         self.writer.add_scalar('Loss/Train_MS', avg_ms, epoch + 1)
+        self.writer.add_scalar('Loss/Train_KL', avg_kl, epoch + 1)
 
         self._last_train_loss = avg_loss
         self._last_train_ce = avg_ce
         self._last_train_ms = avg_ms
+        self._last_train_kl = avg_kl
 
 
 
@@ -154,20 +165,27 @@ class Engine:
         running_loss = 0.0
         ce_running_loss = 0.0
         ms_running_loss = 0.0
-        self.model.eval()
-
+        kl_running_loss = 0.0
+        self.model_student.eval()
+        self.model_teacher.eval()
         with torch.no_grad():  # <- 반드시 감싸주세요!
             for batch, d in enumerate(self.validation_loader):
                 inputs, labels = self._parse_data_for_train(d)
                 inputs = inputs.to(self.device)
                 labels = labels.to(self.device)
-                outputs = self.model(inputs)
-                total_loss, ce_loss, ms_loss = self.loss.compute(outputs, labels)
+
+                outputs_student = self.model_student(inputs)
+                outputs_teacher = self.model_teacher(inputs)
+
+                total_loss, ce_loss, ms_loss, kl_loss = self.loss.compute(outputs_student, outputs_teacher, labels)
+
                 running_loss += total_loss.item()
                 if ce_loss is not None:
                     ce_running_loss += ce_loss
                 if ms_loss is not None:
                     ms_running_loss += ms_loss
+                if kl_loss is not None:
+                    kl_running_loss += kl_loss
 
 
                 self.ckpt.write_log(
@@ -182,15 +200,17 @@ class Engine:
                 )
 
                 if self.wandb and wandb is not None:
-                    wandb.log({"val_loss_step": loss.item()})
+                    wandb.log({"val_loss_step": total_loss.item()})
 
         avg_loss = running_loss / len(self.validation_loader)
         avg_ce = ce_running_loss / len(self.validation_loader) if ce_running_loss != 0 else None
         avg_ms = ms_running_loss / len(self.validation_loader) if ms_running_loss != 0 else None
+        avg_kl = kl_running_loss / len(self.validation_loader) if kl_running_loss != 0 else None
 
         self.ckpt.validation_loss_history.append(avg_loss)
         self.val_ce_loss_history.append(avg_ce)
         self.val_ms_loss_history.append(avg_ms)
+        self.val_kl_loss_history.append(avg_kl)
 
         self.ckpt.plot_losses(
             self.ckpt.loss_history,  # total train loss
@@ -199,11 +219,14 @@ class Engine:
             self.val_ce_loss_history,  # ce val loss
             self.train_ms_loss_history,  # ms train loss
             self.val_ms_loss_history,  # ms val loss
+            self.train_kl_loss_history,  # kl train loss
+            self.val_kl_loss_history,  # kl val loss
         )
 
         self.writer.add_scalar('Loss/Val_Total', avg_loss, epoch + 1)
         self.writer.add_scalar('Loss/Val_CE', avg_ce, epoch + 1)
         self.writer.add_scalar('Loss/Val_MS', avg_ms, epoch + 1)
+        self.writer.add_scalar('Loss/Val_KL', avg_kl, epoch + 1)
 
         self.writer.add_scalars('Loss/Total', {
             'Train': self._last_train_loss,
@@ -217,28 +240,24 @@ class Engine:
             'Train': self._last_train_ms,
             'Val': avg_ms
         }, epoch + 1)
+        self.writer.add_scalars('Loss/KL', {
+            'Train': self._last_train_kl,
+            'Val': avg_kl
+        }, epoch + 1)
 
     def test(self):
         epoch = self.scheduler.last_epoch
         self.ckpt.write_log("\n[INFO] Test:")
-
-        test_model = copy.deepcopy(self.model)
-        test_model.to('cpu')
-        test_model.eval()
-        print_model_size(test_model, "QAT 모델 (양자화 전)")
-        # print(test_model)
-        test_model = torch.quantization.convert(test_model, inplace=False)
-        print("[INFO] 모델 양자화 완료")
-        print_model_size(test_model, "Quantized 모델 (양자화 후)")
+        self.model_student.eval()
 
         self.ckpt.add_log(torch.zeros(1, 6))
 
         with torch.no_grad():
             qf, query_ids, query_cams = self.extract_feature(
-                test_model, self.query_loader, self.args
+                self.query_loader, self.args
             )
             gf, gallery_ids, gallery_cams = self.extract_feature(
-                test_model, self.test_loader, self.args
+                self.test_loader, self.args
             )
 
         if self.args.re_rank:
@@ -304,7 +323,6 @@ class Engine:
                 r[0],
                 self.ckpt.dir,
                 is_best=is_best,
-                state_dict=test_model.state_dict()
             )
 
         if self.wandb is True and wandb is not None:
@@ -337,31 +355,38 @@ class Engine:
         inv_idx = torch.arange(inputs.size(3) - 1, -1, -1).long()  # N x C x H x W
         return inputs.index_select(3, inv_idx)
 
-    def extract_feature(self, model, loader, args):
-        features = torch.FloatTensor().to('cpu')
+    def extract_feature(self, loader, args):
+        features = torch.FloatTensor()
         pids, camids = [], []
+
         for d in loader:
             inputs, pid, camid = self._parse_data_for_eval(d)
-            input_img = inputs.to('cpu')
-            outputs = model(input_img)
-            f1 = outputs[2].detach().cpu()
+            input_img = inputs.to(self.device)
+            outputs = self.model_student(input_img)
+
+            f1 = outputs[2].data.cpu()
             # flip
-            flipped_inputs = inputs.index_select(3, torch.arange(inputs.size(3) - 1, -1, -1))
-            input_img = flipped_inputs.to('cpu')
-            outputs = model(input_img)
-            # outputs = outputs.dequantize()
-            f2 = outputs[2].detach().cpu()
+            inputs = inputs.index_select(3, torch.arange(inputs.size(3) - 1, -1, -1))
+            input_img = inputs.to(self.device)
+            outputs = self.model_student(input_img)
+            f2 = outputs[2].data.cpu()
+
             ff = f1 + f2
             if ff.dim() == 3:
-                fnorm = torch.norm(ff, p=2, dim=1, keepdim=True)
+                fnorm = torch.norm(
+                    ff, p=2, dim=1, keepdim=True
+                )  # * np.sqrt(ff.shape[2])
                 ff = ff.div(fnorm.expand_as(ff))
                 ff = ff.view(ff.size(0), -1)
+
             else:
                 fnorm = torch.norm(ff, p=2, dim=1, keepdim=True)
                 ff = ff.div(fnorm.expand_as(ff))
-            features = torch.cat((features, ff.cpu()), 0)
+
+            features = torch.cat((features, ff), 0)
             pids.extend(pid)
             camids.extend(camid)
+
         return features, np.asarray(pids), np.asarray(camids)
 
     def terminate(self):
@@ -385,16 +410,15 @@ class Engine:
         camids = data[2]
         return imgs, pids, camids
 
-    def _save_checkpoint(self, epoch, rank1, save_dir, is_best=False, state_dict=None):
-        if state_dict is None:
-            state_dict = self.model.state_dict()  # 기본: float(QAT 준비 상태)
+    def _save_checkpoint(self, epoch, rank1, save_dir, is_best=False):
         self.ckpt.save_checkpoint(
             {
-                "state_dict": state_dict,
+                "state_dict": self.model_student.state_dict(),
                 "epoch": epoch,
                 "rank1": rank1,
                 "optimizer": self.optimizer.state_dict(),
                 "log": self.ckpt.log,
+                # 'scheduler': self.scheduler.state_dict(),
             },
             save_dir,
             is_best=is_best,
