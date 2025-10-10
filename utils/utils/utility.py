@@ -67,7 +67,7 @@ class checkpoint():
         safe_loss = _sanitize_filename(tag_loss)
 
         exp_folder = f"{args.model}_{args.data_train}_{self.fold}_{args.batchid}_{args.batchimage}_{args.lr}_{args.batchtest}_{args.epochs}"
-        self.dir = os.path.join('/content/gdrive/MyDrive/SAVE_VAL_QAT', exp_folder)
+        self.dir = os.path.join('/content/gdrive/MyDrive/SAVE_VAL_KD', exp_folder)
         _make_dir(self.dir)
 
         # 아래 파일명들도 동일하게 safe_loss 사용
