@@ -67,7 +67,7 @@ class checkpoint():
         safe_loss = _sanitize_filename(tag_loss)
 
         exp_folder = f"{args.model_student}_{args.model_teacher}_{args.kl_temp}_{safe_loss}_{args.data_train}_{self.fold}_{args.epochs}"
-        sself.dir = os.path.join('/content/gdrive/MyDrive/SAVE_VAL_KD', exp_folder)
+        self.dir = os.path.join('/content/gdrive/MyDrive/SAVE_VAL_KD', exp_folder)
         _make_dir(self.dir)
 
         # 아래 파일명들도 동일하게 safe_loss 사용
