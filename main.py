@@ -60,8 +60,11 @@ if __name__ == '__main__':
         n += 1
         engine.train()
         engine.validation()
-        if args.test_every != 0 and n % args.test_every == 0:
-            engine.test()
-        elif n == args.epochs:
-            engine.test()
+
+        # 🔽 100 에폭 이후부터 매 에폭마다 테스트
+        if n >= 150:
+            if args.test_every != 0 and n % args.test_every == 0:
+                engine.test()
+            elif n == args.epochs:
+                engine.test()
     engine.close()
