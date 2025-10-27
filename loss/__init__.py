@@ -17,6 +17,7 @@ from loss.focal_loss import FocalLoss
 from loss.osm_caa_loss import OSM_CAA_Loss
 from loss.center_loss import CenterLoss
 from .kd_logic_loss import KLLogicLoss
+from .kd_logic_loss_qaware import KLLogicLossQAware
 
 
 class LossFunction:
@@ -61,6 +62,18 @@ class LossFunction:
             elif loss_type == "KL_Logic_Loss":
                 loss_function = KLLogicLoss(temperature=args.kl_temp)
 
+            elif loss_type == "KL_Logic_Loss_QAware":
+                # 하이퍼파라미터는 args에 추가해두면 바로 튜닝 가능
+                loss_function = KLLogicLossQAware(
+                    temperature=args.kl_temp,
+                    alpha=getattr(args, "klq_alpha", 1.0),
+                    w_min=getattr(args, "klq_w_min", 1.0),
+                    w_max=getattr(args, "klq_w_max", 5.0),
+                    norm=getattr(args, "klq_norm", "l2"),
+                    per_sample=getattr(args, "klq_per_sample", False),
+                    detach_error=getattr(args, "klq_detach_error", True),
+                )
+
             self.loss.append(
                 {"type": loss_type, "weight": float(weight), "function": loss_function}
             )
@@ -72,11 +85,11 @@ class LossFunction:
 
     def compute(self, outputs_student, outputs_teacher, labels):
         losses = []
-
+        ce_value = ms_value = kl_value = None
         for i, l in enumerate(self.loss):
             if l["type"] in ["CrossEntropy"]:
                 if isinstance(outputs_student[0], list):
-                    loss = [l["function"](outputs_student, labels) for outputs_student in outputs_student[0]]
+                    loss = [l["function"](logits, labels) for logits in outputs_student[0]]
                 elif isinstance(outputs_student[0], torch.Tensor):
                     loss = [l["function"](outputs_student[0], labels)]
                 else:
@@ -91,7 +104,7 @@ class LossFunction:
 
             elif l["type"] in ["Triplet", "MSLoss"]:
                 if isinstance(outputs_student[1], list):
-                    loss = [l["function"](outputs_student, labels) for outputs_student in outputs_student[1]]
+                    loss = [l["function"](feats, labels) for feats in outputs_student[1]]
                 elif isinstance(outputs_student[1], torch.Tensor):
                     loss = [l["function"](outputs_student[1], labels)]
                 else:
@@ -108,6 +121,19 @@ class LossFunction:
                     raise ValueError("KL_Logic_Loss requires both logic_student and logic_teacher")
 
                 loss = l["function"](outputs_student[3], outputs_teacher[3])
+
+                effective_loss = l["weight"] * loss
+                losses.append(effective_loss)
+                self.log[-1, i] += effective_loss.item()
+                kl_value = effective_loss.item()
+
+            elif l["type"] == "KL_Logic_Loss_QAware":
+                # 기대: outputs_student가 (post_logits, pre_logits)를 모두 제공
+                s_post = outputs_student[3]  # (B,H,C)
+                t_log = outputs_teacher[3]  # (B,H,C)
+                s_pre = outputs_student[4]  # (B,H,C)  ← 새로 넘길 항목
+
+                loss = l["function"](s_post, t_log, s_pre)
 
                 effective_loss = l["weight"] * loss
                 losses.append(effective_loss)

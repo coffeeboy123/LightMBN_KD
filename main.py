@@ -28,6 +28,9 @@ if __name__ == '__main__':
     ckpt = utility.checkpoint(args)
     loader = data_v2.ImageDataManager(args)
     model_student = make_model_student(args, ckpt)
+    model_student.qconfig = torch.quantization.get_default_qat_qconfig("qnnpack")
+    model_student = torch.quantization.prepare_qat(model_student, inplace=True)
+
     model_teacher = make_model_teacher(args, ckpt)
     optimzer = make_optimizer(args, model_student)
     loss = make_loss(args, ckpt) if not args.test_only else None
@@ -59,10 +62,9 @@ if __name__ == '__main__':
     while not engine.terminate():
         n += 1
         engine.train()
-        engine.validation()
 
         # 🔽 100 에폭 이후부터 매 에폭마다 테스트
-        if n >= 1:
+        if n >= 150:
             if args.test_every != 0 and n % args.test_every == 0:
                 engine.test()
             elif n == args.epochs:

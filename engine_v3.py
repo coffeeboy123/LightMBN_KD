@@ -3,11 +3,20 @@ import numpy as np
 import torch
 from utils.functions import evaluation
 from utils.re_ranking import re_ranking, re_ranking_gpu
+import os
+import copy
 
 try:
     import wandb
 except ImportError:
     wandb = None
+
+def print_model_size(model, model_name="Model"):
+    torch.save(model.state_dict(), "temp.pth")
+    size_mb = os.path.getsize("temp.pth") / 1e6
+    print(f"{model_name} size: {size_mb:.2f} MB")
+    os.remove("temp.pth")
+
 
 
 def set_seed(seed: int):
@@ -46,8 +55,6 @@ class Engine:
 
         self.lr = 0.0
         self.device = torch.device("cpu" if args.cpu else "cuda")
-        self.model_student.to(self.device)
-        self.model_teacher.to(self.device)
 
         self.train_ce_loss_history = []
         self.train_ms_loss_history = []
@@ -101,8 +108,6 @@ class Engine:
             self.model_teacher.eval()
             with torch.no_grad():
                 outputs_teacher = self.model_teacher(inputs)
-
-
 
             total_loss, ce_loss, ms_loss, kl_loss= self.loss.compute(outputs_student, outputs_teacher, labels)
 
@@ -173,9 +178,10 @@ class Engine:
                 inputs, labels = self._parse_data_for_train(d)
                 inputs = inputs.to(self.device)
                 labels = labels.to(self.device)
-
                 outputs_student = self.model_student(inputs)
+
                 outputs_teacher = self.model_teacher(inputs)
+
 
                 total_loss, ce_loss, ms_loss, kl_loss = self.loss.compute(outputs_student, outputs_teacher, labels)
 
@@ -250,6 +256,15 @@ class Engine:
         self.ckpt.write_log("\n[INFO] Test:")
         self.model_student.eval()
 
+        self.test_model = copy.deepcopy(self.model_student)
+        self.test_model.to('cpu')
+        self.test_model.eval()
+        print_model_size(self.test_model, "QAT 모델 (양자화 전)")
+        # print(test_model)
+        self.test_model = torch.quantization.convert(self.test_model, inplace=False)
+        print("[INFO] 모델 양자화 완료")
+        print_model_size(self.test_model, "Quantized 모델 (양자화 후)")
+
         self.ckpt.add_log(torch.zeros(1, 6))
 
         with torch.no_grad():
@@ -323,6 +338,7 @@ class Engine:
                 r[0],
                 self.ckpt.dir,
                 is_best=is_best,
+                state_dict=self.test_model.state_dict()
             )
 
         if self.wandb is True and wandb is not None:
@@ -356,19 +372,19 @@ class Engine:
         return inputs.index_select(3, inv_idx)
 
     def extract_feature(self, loader, args):
-        features = torch.FloatTensor()
+        features = torch.FloatTensor().to('cpu')
         pids, camids = [], []
 
         for d in loader:
             inputs, pid, camid = self._parse_data_for_eval(d)
-            input_img = inputs.to(self.device)
-            outputs = self.model_student(input_img)
+            input_img = inputs.to('cpu')
+            outputs = self.test_model(input_img)
 
             f1 = outputs[2].data.cpu()
             # flip
             inputs = inputs.index_select(3, torch.arange(inputs.size(3) - 1, -1, -1))
-            input_img = inputs.to(self.device)
-            outputs = self.model_student(input_img)
+            input_img = inputs.to('cpu')
+            outputs = self.test_model(input_img)
             f2 = outputs[2].data.cpu()
 
             ff = f1 + f2
@@ -410,15 +426,16 @@ class Engine:
         camids = data[2]
         return imgs, pids, camids
 
-    def _save_checkpoint(self, epoch, rank1, save_dir, is_best=False):
+    def _save_checkpoint(self, epoch, rank1, save_dir, is_best=False, state_dict=None):
+        if state_dict is None:
+            state_dict = self.model_student.state_dict()  # 기본: float(QAT 준비 상태)
         self.ckpt.save_checkpoint(
             {
-                "state_dict": self.model_student.state_dict(),
+                "state_dict": state_dict,
                 "epoch": epoch,
                 "rank1": rank1,
                 "optimizer": self.optimizer.state_dict(),
                 "log": self.ckpt.log,
-                # 'scheduler': self.scheduler.state_dict(),
             },
             save_dir,
             is_best=is_best,
