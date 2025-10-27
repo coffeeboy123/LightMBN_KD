@@ -64,7 +64,7 @@ if __name__ == '__main__':
         engine.train()
 
         # 🔽 100 에폭 이후부터 매 에폭마다 테스트
-        if n >= 150:
+        if n >= 200:
             if args.test_every != 0 and n % args.test_every == 0:
                 engine.test()
             elif n == args.epochs:
