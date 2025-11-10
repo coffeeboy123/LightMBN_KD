@@ -12,6 +12,13 @@ class LMBN_n_osnet_x0_5_student(nn.Module):
     def __init__(self, args):
         super(LMBN_n_osnet_x0_5_student, self).__init__()
 
+        self.klw = nn.Linear(args.num_classes, 1, bias=True)  # (C) -> (1)
+        self._klw_squash = nn.Sigmoid()
+        # 범위 하이퍼파라미터 (args에서 가져오고, 없으면 기본값)
+
+        self.enable_klw = True
+
+
         self.quant = torch.quantization.QuantStub()  # 양자화 적용
         self.dequant = torch.quantization.DeQuantStub()  # 양자화 해제
 
@@ -74,6 +81,12 @@ class LMBN_n_osnet_x0_5_student(nn.Module):
         self.batch_drop_block = BatchFeatureErase_Top_osnet_x0_5(args.feats_student, OSBlock)
 
         self.activation_map = args.activation_map
+
+    def disable_klw_for_inference(self):
+        self.enable_klw = False
+        # (안전) 혹시라도 준비/변환 시 양자화 대상에서 제외
+        if hasattr(self, "klw"):
+            self.klw.qconfig = None
 
     def dequantize_if_needed(self, t):
         if isinstance(t, tuple):
@@ -164,8 +177,24 @@ class LMBN_n_osnet_x0_5_student(nn.Module):
 
         fea = [f_glo[2], f_glo_drop[2], f_p0[2]]
 
+        s_post = torch.stack([f_glo[1], f_p0[1], f_p1[1], f_p2[1], f_p3[1], f_c0[1], f_c1[1]], dim=1)  # (B,H,C)
+        s_pre = torch.stack([f_glo[3], f_p0[3], f_p1[3], f_p2[3], f_p3[3], f_c0[3], f_c1[3]], dim=1)  # (B,H,C)
 
-        return [f_glo[1], f_p0[1], f_p1[1], f_p2[1], f_p3[1], f_c0[1], f_c1[1], f_glo_drop[1]], fea, torch.stack([f_glo[0], f_glo_drop[0], f_p0[0], f_p1[0], f_p2[0], f_p3[0], f_c0[0], f_c1[0]], dim=2), torch.stack([f_glo[1], f_p0[1], f_p1[1], f_p2[1], f_p3[1], f_c0[1], f_c1[1]], dim=1),  torch.stack([f_glo[3], f_p0[3], f_p1[3], f_p2[3], f_p3[3], f_c0[3], f_c1[3]], dim=1)
+        if self.enable_klw:
+            diff = (s_post - s_pre).abs()  # (B,H,C)
+            B, H, C = diff.shape
+            w_raw = self.klw(diff.view(B * H, C))  # (B*H,1)
+            w_raw = w_raw.view(B, H)  # (B,H)
+            w_learned = self._klw_squash(w_raw)  # (B,H)
+        else:
+            w_learned = None
+
+        return [f_glo[1], f_p0[1], f_p1[1], f_p2[1], f_p3[1], f_c0[1], f_c1[1], f_glo_drop[1]], \
+            fea, \
+            torch.stack([f_glo[0], f_glo_drop[0], f_p0[0], f_p1[0], f_p2[0], f_p3[0], f_c0[0], f_c1[0]], dim=2), \
+            s_post, \
+            s_pre, \
+            w_learned
 
     def weights_init_kaiming(self, m):
         classname = m.__class__.__name__

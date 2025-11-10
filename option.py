@@ -12,7 +12,7 @@ parser.add_argument("--config", type=str, default="", help='config path')
 
 
 parser.add_argument("--datadir", type=str,
-                    default="C:/Users/Howon_LEE/Desktop/Hard_Data_validation/ReIDataset_SYSU_A", help='dataset directory root')
+                    default="C:/Users/Howon_LEE/Desktop/Very_Hard_Data/ReIDataset_SYSU_A", help='dataset directory root')
 parser.add_argument('--data_train', type=str,
                     default='SYSU', help='train dataset name')
 parser.add_argument('--data_validation', type=str,
@@ -40,10 +40,10 @@ parser.add_argument('--sampler', type=str, default='True',
 parser.add_argument('--model_student', default='LMBN_n_osnet_x0_5_student', help='model name')
 parser.add_argument('--model_teacher', default='LMBN_n_fusion_3', help='model name')
 parser.add_argument('--teacher_pretrain', type=str, default='C:/Users/Howon_LEE/Downloads/LMBN_n_fusion_3_SYSU_A_6_2_0.0006_12_300_model-best.pth', help='teacher model checkpoint path')
-parser.add_argument('--kl_temp', type=float, default=2.0, help='Temperature for logic KL')
+parser.add_argument('--kl_temp', type=float, default=1.5, help='Temperature for logic KL')
 
 
-parser.add_argument('--loss', type=str, default='0.5*CrossEntropy+0.5*MSLoss+1.0*KL_Logic_Loss_QAware"',
+parser.add_argument('--loss', type=str, default='0.5*CrossEntropy+0.5*MSLoss+0.25*KL_Logic_Loss_QAware',
                     help='loss function configuration')
 parser.add_argument("--if_labelsmooth", action='store_true',
                     help='Label Smoothing Trick')
