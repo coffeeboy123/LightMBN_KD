@@ -18,6 +18,9 @@ class LMBN_n_osnet_x0_5_student(nn.Module):
 
         self.enable_klw = True
 
+        self.klw.qconfig = None
+        self._klw_squash.qconfig = None
+
 
         self.quant = torch.quantization.QuantStub()  # 양자화 적용
         self.dequant = torch.quantization.DeQuantStub()  # 양자화 해제
