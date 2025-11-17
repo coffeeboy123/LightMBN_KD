@@ -259,6 +259,10 @@ class Engine:
         self.test_model = copy.deepcopy(self.model_student)
         self.test_model.to('cpu')
         self.test_model.eval()
+
+        if hasattr(self.test_model, "disable_klw_for_inference"):
+            self.test_model.disable_klw_for_inference()
+
         print_model_size(self.test_model, "QAT 모델 (양자화 전)")
         # print(test_model)
         self.test_model = torch.quantization.convert(self.test_model, inplace=False)

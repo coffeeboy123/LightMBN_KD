@@ -128,12 +128,15 @@ class LossFunction:
                 kl_value = effective_loss.item()
 
             elif l["type"] == "KL_Logic_Loss_QAware":
-                # 기대: outputs_student가 (post_logits, pre_logits)를 모두 제공
                 s_post = outputs_student[3]  # (B,H,C)
                 t_log = outputs_teacher[3]  # (B,H,C)
-                s_pre = outputs_student[4]  # (B,H,C)  ← 새로 넘길 항목
+                s_pre = outputs_student[4]  # (B,H,C)
+                w_learned = None
+                if isinstance(outputs_student, (list, tuple)) and len(outputs_student) > 5:
+                    w_learned = outputs_student[5]  # (B,H)
 
-                loss = l["function"](s_post, t_log, s_pre)
+                # ★ 학습 가중치 전달
+                loss = l["function"](s_post, t_log, s_pre, w_learned=w_learned)
 
                 effective_loss = l["weight"] * loss
                 losses.append(effective_loss)
